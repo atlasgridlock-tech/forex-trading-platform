@@ -1627,15 +1627,9 @@ async def get_performance_metrics():
     """Get HTTP client pool and cache performance metrics."""
     from shared import get_metrics
     metrics = get_metrics()
+    stats = metrics.get_stats()
     return {
-        "http_pool": {
-            "total_requests": metrics.http_requests,
-            "cache_hits": metrics.cache_hits,
-            "cache_misses": metrics.cache_misses,
-            "cache_hit_rate": f"{(metrics.cache_hits / max(metrics.cache_hits + metrics.cache_misses, 1)) * 100:.1f}%",
-            "avg_latency_ms": f"{metrics.avg_latency:.2f}",
-            "total_latency_ms": f"{metrics.total_latency:.2f}",
-        },
+        "http_pool": stats,
         "status": "pooled_http_client_active",
         "optimization": "connection_reuse_enabled",
     }
