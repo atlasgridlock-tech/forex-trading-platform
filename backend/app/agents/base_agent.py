@@ -94,17 +94,32 @@ class BaseAgent(ABC):
     
     def __init__(
         self,
-        agent_id: str,
-        name: str,
-        role: str,
+        agent_id: str = None,
+        name: str = None,
+        role: str = None,
         redis_url: str = "redis://localhost:6379",
         llm_model: str = "claude-sonnet-4-20250514",
+        # Accept alternative patterns for compatibility
+        config: Dict[str, Any] = None,
+        description: str = None,
+        dependencies: List[str] = None,
+        **kwargs  # Absorb any other kwargs
     ):
-        self.agent_id = agent_id
+        # Handle various calling patterns
+        if agent_id is None and name is not None:
+            agent_id = name  # Use name as agent_id if not provided
+        if role is None:
+            role = description or "Trading Agent"
+        if name is None:
+            name = agent_id or "unnamed_agent"
+            
+        self.agent_id = agent_id or "default_agent"
         self.name = name
         self.role = role
         self.redis_url = redis_url
         self.llm_model = llm_model
+        self.config = config or {}
+        self.dependencies = dependencies or []
         
         self.redis: Optional[redis.Redis] = None
         self.pubsub: Optional[redis.client.PubSub] = None
