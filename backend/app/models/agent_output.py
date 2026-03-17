@@ -69,5 +69,5 @@ class RegimeHistory(Base):
     duration_bars: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     
     __table_args__ = (
-        Index("ix_regime_history_lookup", "symbol", detected_at.desc()),
+        Index("ix_regime_history_lookup", "symbol", text("detected_at DESC")),
     )

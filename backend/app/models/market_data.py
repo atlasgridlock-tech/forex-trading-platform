@@ -4,7 +4,7 @@ Market Data Models - OHLCV bars, data health, key levels.
 from datetime import datetime
 from decimal import Decimal
 from typing import Optional
-from sqlalchemy import String, Integer, Boolean, Text, Index, UniqueConstraint
+from sqlalchemy import text, String, Integer, Boolean, Text, Index, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -32,7 +32,7 @@ class MarketDataBar(Base):
     
     __table_args__ = (
         UniqueConstraint("symbol", "timeframe", "bar_timestamp", name="uq_bar_identity"),
-        Index("ix_market_data_bars_lookup", "symbol", "timeframe", bar_timestamp.desc()),
+        Index("ix_market_data_bars_lookup", "symbol", "timeframe", text("bar_timestamp DESC")),
     )
 
 
@@ -56,7 +56,7 @@ class MarketDataHealth(Base):
     halt_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     
     __table_args__ = (
-        Index("ix_market_data_health_lookup", "symbol", timestamp.desc()),
+        Index("ix_market_data_health_lookup", "symbol", text("timestamp DESC")),
     )
 
 

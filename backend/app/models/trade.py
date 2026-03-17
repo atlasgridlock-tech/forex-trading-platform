@@ -4,7 +4,7 @@ Trade Models - Trade plans, execution receipts, positions.
 from datetime import datetime
 from decimal import Decimal
 from typing import Optional
-from sqlalchemy import String, Integer, Boolean, Text, BigInteger, ForeignKey, Index
+from sqlalchemy import text, String, Integer, Boolean, Text, BigInteger, ForeignKey, Index
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -82,7 +82,7 @@ class TradePlan(Base):
     positions: Mapped[list["Position"]] = relationship(back_populates="trade_plan")
     
     __table_args__ = (
-        Index("ix_trade_plans_decision", "decision", timestamp.desc()),
+        Index("ix_trade_plans_decision", "decision", text("timestamp DESC")),
     )
 
 
@@ -193,5 +193,5 @@ class Position(Base, TimestampMixin):
     trade_plan: Mapped[Optional["TradePlan"]] = relationship(back_populates="positions")
     
     __table_args__ = (
-        Index("ix_positions_lookup", "symbol", entry_time.desc()),
+        Index("ix_positions_lookup", "symbol", text("entry_time DESC")),
     )
