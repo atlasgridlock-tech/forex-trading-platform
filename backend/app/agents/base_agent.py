@@ -260,8 +260,12 @@ When analyzing, structure your response as:
         return response
     
     @abstractmethod
-    async def analyze(self) -> Dict[str, Any]:
-        """Run the agent's main analysis. Override in subclass."""
+    async def analyze(self, context: Dict[str, Any] = None) -> Dict[str, Any]:
+        """Run the agent's main analysis. Override in subclass.
+        
+        Args:
+            context: Optional context dict for analysis (symbol, timeframe, etc.)
+        """
         pass
     
     @abstractmethod
@@ -269,8 +273,19 @@ When analyzing, structure your response as:
         """Get the agent's current view. Override in subclass."""
         pass
     
-    async def run(self):
-        """Main agent loop."""
+    async def run(self, context: Dict[str, Any] = None):
+        """Main agent loop or single analysis run.
+        
+        Args:
+            context: Optional context for single-shot analysis mode.
+                     If provided, runs analyze() once and returns.
+                     If None, runs the continuous monitoring loop.
+        """
+        # Single-shot mode: just run analyze with context and return
+        if context is not None:
+            return await self.analyze(context)
+            
+        # Continuous mode: connect and loop
         await self.connect()
         await self.load_state()
         
