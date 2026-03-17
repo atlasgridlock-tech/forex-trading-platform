@@ -955,13 +955,14 @@ async def get_market_data():
                         if symbol in SYMBOLS:
                             bid = float(parts[1])
                             ask = float(parts[2])
-                            spread = float(parts[4]) if len(parts) > 4 else 0
+                            # Spread is in column 3 (index 3), column 4 is Point
+                            spread_pips = float(parts[3]) if len(parts) > 3 else 0
                             market[symbol] = {
                                 "symbol": symbol,
                                 "bid": bid,
                                 "ask": ask,
                                 "price": (bid + ask) / 2,
-                                "spread": spread,
+                                "spread": spread_pips,
                             }
     except Exception as e:
         print(f"[Curator] Error reading market data: {e}")

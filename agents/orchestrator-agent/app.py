@@ -166,7 +166,8 @@ async def check_hard_gates(symbol: str, direction: str, strategy: str, stop_loss
     # 2. Spread (Curator)
     curator_data = await fetch_agent_data("curator", f"/api/snapshot/spread/{symbol}")
     if curator_data:
-        spread = curator_data.get("spread_pips", 0)
+        # API returns current_spread, not spread_pips
+        spread = curator_data.get("current_spread", curator_data.get("spread_pips", 0))
         max_spread = CONFIG["hard_gates"]["max_spread_major"] if "JPY" not in symbol else CONFIG["hard_gates"]["max_spread_cross"]
         spread_ok = spread < max_spread
         gates.append({
