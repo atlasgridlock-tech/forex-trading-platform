@@ -4,6 +4,7 @@ Version control, change validation, overfit detection
 """
 
 import os
+import sys
 import json
 import asyncio
 import httpx
@@ -17,11 +18,19 @@ from enum import Enum
 import hashlib
 import uuid
 
+# Add shared module to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from shared import (
+    call_claude,
+    get_agent_url,
+    post_json,
+    ChatRequest,
+)
+
 app = FastAPI(title="Arbiter - Model Governance Agent", version="1.0")
 
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-ORCHESTRATOR_URL = os.getenv("ORCHESTRATOR_URL", "http://orchestrator-agent:8000")
 AGENT_NAME = "Arbiter"
+ORCHESTRATOR_URL = get_agent_url("orchestrator")
 WORKSPACE = Path("/app/workspace")
 VERSIONS_DIR = WORKSPACE / "versions"
 CHANGELOG_FILE = WORKSPACE / "CHANGELOG.md"
@@ -69,10 +78,7 @@ class ChangeRequest(BaseModel):
     requested_by: str
     validation: Optional[ValidationResults] = None
 
-
-class ChatRequest(BaseModel):
-    message: str
-
+# Using ChatRequest from shared module
 
 # In-memory storage (would be DB in production)
 versions: Dict[str, List[dict]] = {}  # strategy_name -> [version_records]
@@ -329,35 +335,7 @@ def update_changelog(version_record: dict):
     CHANGELOG_FILE.write_text(content)
 
 
-async def call_claude(prompt: str, context: str = "") -> str:
-    if not ANTHROPIC_API_KEY:
-        return "[No API key configured]"
-    
-    soul = (WORKSPACE / "SOUL.md").read_text() if (WORKSPACE / "SOUL.md").exists() else ""
-    
-    try:
-        async with httpx.AsyncClient() as client:
-            r = await client.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={
-                    "x-api-key": ANTHROPIC_API_KEY,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json"
-                },
-                json={
-                    "model": "claude-sonnet-4-20250514",
-                    "max_tokens": 2048,
-                    "system": soul,
-                    "messages": [{"role": "user", "content": f"{context}\n\n{prompt}" if context else prompt}]
-                },
-                timeout=60.0
-            )
-            if r.status_code == 200:
-                return r.json()["content"][0]["text"]
-    except Exception as e:
-        print(f"Claude API error: {e}")
-    
-    return "[Error calling Claude API]"
+# Using shared call_claude - removed duplicate implementation
 
 
 @app.on_event("startup")
@@ -540,7 +518,8 @@ async def home():
 @app.post("/chat")
 async def chat(request: ChatRequest):
     context = f"Versions: {json.dumps(versions, default=str)[:2000]}\nRequests: {json.dumps(list(change_requests.values())[-5:], default=str)[:2000]}"
-    return {"response": await call_claude(request.message, context)}
+    response = await call_claude(request.message, context, agent_name=AGENT_NAME)
+    return {"response": response}
 
 
 @app.post("/api/request")

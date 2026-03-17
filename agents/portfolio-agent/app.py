@@ -4,6 +4,7 @@ Currency-level exposure, theme analysis, concentration detection
 """
 
 import os
+import sys
 import json
 import asyncio
 import httpx
@@ -15,18 +16,21 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from dataclasses import dataclass
 
+# Add shared module to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from shared import (
+    call_claude,
+    get_agent_url,
+    post_json,
+    ChatRequest,
+)
+
 app = FastAPI(title="Balancer - Portfolio Exposure Agent", version="2.0")
 
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-ORCHESTRATOR_URL = os.getenv("ORCHESTRATOR_URL", "http://orchestrator-agent:8000")
 AGENT_NAME = "Balancer"
-WORKSPACE = Path("/app/workspace")
+ORCHESTRATOR_URL = get_agent_url("orchestrator")
 
 CURRENCIES = ["EUR", "GBP", "USD", "JPY", "CHF", "CAD", "AUD", "NZD"]
-
-
-class ChatRequest(BaseModel):
-    message: str
 
 
 class PositionRequest(BaseModel):
@@ -366,48 +370,26 @@ def evaluate_new_position(symbol: str, direction: str, risk_pct: float) -> dict:
 
 
 async def send_to_orchestrator():
-    """Send portfolio state to Orchestrator."""
-    try:
-        async with httpx.AsyncClient() as client:
-            await client.post(
-                f"{ORCHESTRATOR_URL}/api/ingest",
-                json={
-                    "agent_id": "portfolio",
-                    "agent_name": AGENT_NAME,
-                    "output_type": "analysis",
-                    "timestamp": datetime.utcnow().isoformat(),
-                    "data": {
-                        "exposure_score": calculate_exposure_score(),
-                        "currency_exposure": calculate_currency_exposure(),
-                        "theme_exposure": calculate_theme_exposure(),
-                        "position_count": len(positions),
-                        "recommendations": len(generate_recommendations()),
-                    },
-                },
-                timeout=5.0
-            )
-    except:
-        pass
+    """Send portfolio state to Orchestrator using shared post_json."""
+    await post_json(
+        f"{ORCHESTRATOR_URL}/api/ingest",
+        {
+            "agent_id": "portfolio",
+            "agent_name": AGENT_NAME,
+            "output_type": "analysis",
+            "timestamp": datetime.utcnow().isoformat(),
+            "data": {
+                "exposure_score": calculate_exposure_score(),
+                "currency_exposure": calculate_currency_exposure(),
+                "theme_exposure": calculate_theme_exposure(),
+                "position_count": len(positions),
+                "recommendations": len(generate_recommendations()),
+            },
+        }
+    )
 
 
-async def call_claude(prompt: str, context: str = "") -> str:
-    if not ANTHROPIC_API_KEY:
-        return "[No API key]"
-    soul = (WORKSPACE / "SOUL.md").read_text() if (WORKSPACE / "SOUL.md").exists() else ""
-    try:
-        async with httpx.AsyncClient() as client:
-            r = await client.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={"x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json"},
-                json={"model": "claude-sonnet-4-20250514", "max_tokens": 2048, "system": soul,
-                      "messages": [{"role": "user", "content": f"{context}\n\n{prompt}" if context else prompt}]},
-                timeout=60.0
-            )
-            if r.status_code == 200:
-                return r.json()["content"][0]["text"]
-    except:
-        pass
-    return "[Error]"
+# Using shared call_claude - removed duplicate implementation
 
 
 @app.on_event("startup")
@@ -648,7 +630,8 @@ async def chat(request: ChatRequest):
 - Theme Exposure: {json.dumps(calculate_theme_exposure())}
 - Exposure Score: {calculate_exposure_score()}
 - Recommendations: {json.dumps(generate_recommendations())}"""
-    return {"response": await call_claude(request.message, context)}
+    response = await call_claude(request.message, context, agent_name=AGENT_NAME)
+    return {"response": response}
 
 
 @app.post("/api/position/add")

@@ -4,6 +4,7 @@ Event risk monitoring, calendar tracking, trading window management
 """
 
 import os
+import sys
 import json
 import asyncio
 import httpx
@@ -12,28 +13,31 @@ from pathlib import Path
 from typing import Dict, List, Optional
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
-from pydantic import BaseModel
 from enum import Enum
 import feedparser
 
+# Add shared module to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from shared import (
+    call_claude,
+    get_agent_url,
+    post_json,
+    FOREX_SYMBOLS,
+    ChatRequest,
+)
+
 app = FastAPI(title="Sentinel - News & Event Risk Agent", version="2.0")
 
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-ORCHESTRATOR_URL = os.getenv("ORCHESTRATOR_URL", "http://orchestrator-agent:8000")
 AGENT_NAME = "Sentinel"
-WORKSPACE = Path("/app/workspace")
+ORCHESTRATOR_URL = get_agent_url("orchestrator")
 
-SYMBOLS = ["EURUSD", "GBPUSD", "USDJPY", "GBPJPY", "USDCHF", "USDCAD", "EURAUD", "AUDNZD", "AUDUSD"]
+SYMBOLS = FOREX_SYMBOLS
 
 # News and event cache
 headlines: List[dict] = []
 economic_calendar: List[dict] = []
 symbol_risk_scores: Dict[str, dict] = {}
 current_mode: str = "normal"
-
-
-class ChatRequest(BaseModel):
-    message: str
 
 
 class TradingMode(str, Enum):
@@ -403,29 +407,24 @@ def determine_overall_mode() -> tuple:
 
 
 async def send_to_orchestrator():
-    """Send risk assessment to Orchestrator."""
+    """Send risk assessment to Orchestrator using shared post_json."""
     mode, reason = determine_overall_mode()
     
-    try:
-        async with httpx.AsyncClient() as client:
-            await client.post(
-                f"{ORCHESTRATOR_URL}/api/ingest",
-                json={
-                    "agent_id": "news",
-                    "agent_name": AGENT_NAME,
-                    "output_type": "alert",
-                    "timestamp": datetime.utcnow().isoformat(),
-                    "data": {
-                        "level": "warning" if mode != TradingMode.NORMAL.value else "info",
-                        "message": f"Trading mode: {mode.upper()} - {reason}",
-                        "mode": mode,
-                        "symbol_risks": {s: r.get("risk_score", 0) for s, r in symbol_risk_scores.items()},
-                    },
-                },
-                timeout=5.0
-            )
-    except:
-        pass
+    await post_json(
+        f"{ORCHESTRATOR_URL}/api/ingest",
+        {
+            "agent_id": "news",
+            "agent_name": AGENT_NAME,
+            "output_type": "alert",
+            "timestamp": datetime.utcnow().isoformat(),
+            "data": {
+                "level": "warning" if mode != TradingMode.NORMAL.value else "info",
+                "message": f"Trading mode: {mode.upper()} - {reason}",
+                "mode": mode,
+                "symbol_risks": {s: r.get("risk_score", 0) for s, r in symbol_risk_scores.items()},
+            },
+        }
+    )
 
 
 async def background_monitoring():
@@ -450,24 +449,7 @@ async def background_monitoring():
         await asyncio.sleep(60)  # Update every minute
 
 
-async def call_claude(prompt: str, context: str = "") -> str:
-    if not ANTHROPIC_API_KEY:
-        return "[No API key]"
-    soul = (WORKSPACE / "SOUL.md").read_text() if (WORKSPACE / "SOUL.md").exists() else ""
-    try:
-        async with httpx.AsyncClient() as client:
-            r = await client.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={"x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json"},
-                json={"model": "claude-sonnet-4-20250514", "max_tokens": 2048, "system": soul,
-                      "messages": [{"role": "user", "content": f"{context}\n\n{prompt}" if context else prompt}]},
-                timeout=60.0
-            )
-            if r.status_code == 200:
-                return r.json()["content"][0]["text"]
-    except:
-        pass
-    return "[Error]"
+# Using shared call_claude - removed duplicate implementation
 
 
 @app.on_event("startup")
@@ -732,7 +714,8 @@ Symbol Risk Scores:
 Headlines:
 {json.dumps(headlines[:5], indent=2)}
 """
-    return {"response": await call_claude(request.message, context)}
+    response = await call_claude(request.message, context, agent_name=AGENT_NAME)
+    return {"response": response}
 
 
 @app.get("/api/mode")

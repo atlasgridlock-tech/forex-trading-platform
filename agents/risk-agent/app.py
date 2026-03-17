@@ -5,6 +5,7 @@ HIGHEST AUTHORITY AFTER ORCHESTRATOR
 """
 
 import os
+import sys
 import json
 import asyncio
 import httpx
@@ -13,26 +14,31 @@ from pathlib import Path
 from typing import Dict, List, Optional
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
-from pydantic import BaseModel
 from enum import Enum
 from dataclasses import dataclass, field
 
+# Add shared module to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from shared import (
+    call_claude,
+    get_agent_url,
+    fetch_json,
+    post_json,
+    FOREX_SYMBOLS,
+    ChatRequest,
+)
+from pydantic import BaseModel
+
 app = FastAPI(title="Guardian - Risk Manager Agent", version="2.0")
 
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-REGIME_URL = os.getenv("REGIME_URL", "http://regime-agent:8000")
-ORCHESTRATOR_URL = os.getenv("ORCHESTRATOR_URL", "http://orchestrator-agent:8000")
 AGENT_NAME = "Guardian"
-WORKSPACE = Path("/app/workspace")
+REGIME_URL = get_agent_url("compass")
+ORCHESTRATOR_URL = get_agent_url("orchestrator")
 
 # MT5 file bridge for reading live positions
 MT5_FILES_PATH = Path(os.getenv("MT5_FILES_PATH", "/mt5files"))
 
-SYMBOLS = ["EURUSD", "GBPUSD", "USDJPY", "GBPJPY", "USDCHF", "USDCAD", "EURAUD", "AUDNZD", "AUDUSD"]
-
-
-class ChatRequest(BaseModel):
-    message: str
+SYMBOLS = FOREX_SYMBOLS
 
 
 class TradeRequest(BaseModel):
@@ -488,49 +494,27 @@ async def evaluate_trade(request: TradeRequest) -> dict:
 
 
 async def send_to_orchestrator(evaluation: dict):
-    """Send risk decision to Orchestrator."""
-    try:
-        output_type = "approval" if evaluation["approved"] else "veto"
-        async with httpx.AsyncClient() as client:
-            await client.post(
-                f"{ORCHESTRATOR_URL}/api/ingest",
-                json={
-                    "agent_id": "risk",
-                    "agent_name": AGENT_NAME,
-                    "output_type": output_type,
-                    "timestamp": datetime.utcnow().isoformat(),
-                    "data": {
-                        "symbol": evaluation["request"]["symbol"],
-                        "approved": evaluation["approved"],
-                        "reason": evaluation["reason"],
-                        "lot_size": evaluation["sizing"]["lot_size"],
-                        "risk_pct": evaluation["sizing"]["risk_pct"],
-                    },
-                },
-                timeout=5.0
-            )
-    except:
-        pass
+    """Send risk decision to Orchestrator using shared post_json."""
+    output_type = "approval" if evaluation["approved"] else "veto"
+    await post_json(
+        f"{ORCHESTRATOR_URL}/api/ingest",
+        {
+            "agent_id": "risk",
+            "agent_name": AGENT_NAME,
+            "output_type": output_type,
+            "timestamp": datetime.utcnow().isoformat(),
+            "data": {
+                "symbol": evaluation["request"]["symbol"],
+                "approved": evaluation["approved"],
+                "reason": evaluation["reason"],
+                "lot_size": evaluation["sizing"]["lot_size"],
+                "risk_pct": evaluation["sizing"]["risk_pct"],
+            },
+        }
+    )
 
 
-async def call_claude(prompt: str, context: str = "") -> str:
-    if not ANTHROPIC_API_KEY:
-        return "[No API key]"
-    soul = (WORKSPACE / "SOUL.md").read_text() if (WORKSPACE / "SOUL.md").exists() else ""
-    try:
-        async with httpx.AsyncClient() as client:
-            r = await client.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={"x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json"},
-                json={"model": "claude-sonnet-4-20250514", "max_tokens": 2048, "system": soul,
-                      "messages": [{"role": "user", "content": f"{context}\n\n{prompt}" if context else prompt}]},
-                timeout=60.0
-            )
-            if r.status_code == 200:
-                return r.json()["content"][0]["text"]
-    except:
-        pass
-    return "[Error]"
+# Using shared call_claude - removed duplicate implementation
 
 
 @app.on_event("startup")
@@ -754,7 +738,8 @@ async def chat(request: ChatRequest):
 - Open Positions: {len(open_positions)}
 - Kill Switch: {kill_switch_active}
 - Config: {json.dumps(config.__dict__)}"""
-    return {"response": await call_claude(request.message, context)}
+    response = await call_claude(request.message, context, agent_name=AGENT_NAME)
+    return {"response": response}
 
 
 @app.post("/api/evaluate")

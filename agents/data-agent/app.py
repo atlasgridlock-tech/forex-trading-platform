@@ -4,6 +4,7 @@ Data ingestion, validation, quality scoring, and distribution
 """
 
 import os
+import sys
 import json
 import asyncio
 import httpx
@@ -17,6 +18,17 @@ from enum import Enum
 import csv
 from collections import defaultdict
 import logging
+
+# Add shared module to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from shared import (
+    call_claude,
+    get_agent_url,
+    post_json,
+    internal_symbol as shared_internal_symbol,
+    FOREX_SYMBOLS,
+    ChatRequest,
+)
 
 # TimescaleDB integration
 try:
@@ -32,10 +44,9 @@ logger = logging.getLogger(__name__)
 app = FastAPI(title="Curator - Market Data Agent", version="2.0")
 
 # Configuration
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-ORCHESTRATOR_URL = os.getenv("ORCHESTRATOR_URL", "http://orchestrator-agent:8000")
-QUALITY_THRESHOLD = float(os.getenv("QUALITY_THRESHOLD", "0.7"))
 AGENT_NAME = "Curator"
+ORCHESTRATOR_URL = get_agent_url("orchestrator")
+QUALITY_THRESHOLD = float(os.getenv("QUALITY_THRESHOLD", "0.7"))
 WORKSPACE = Path("/app/workspace")
 
 # MT5 data paths (mounted from host)
@@ -47,7 +58,7 @@ POSITIONS_FILE = MT5_DATA_PATH / "positions.json"
 BRIDGE_STATUS_FILE = MT5_DATA_PATH / "bridge_status.json"
 
 # Symbols and timeframes
-SYMBOLS = ["EURUSD", "GBPUSD", "USDJPY", "GBPJPY", "USDCHF", "USDCAD", "EURAUD", "AUDNZD", "AUDUSD"]
+SYMBOLS = FOREX_SYMBOLS
 TIMEFRAMES = ["M1", "M5", "M15", "M30", "H1", "H4", "D1"]
 TIMEFRAME_MINUTES = {"M1": 1, "M5": 5, "M15": 15, "M30": 30, "H1": 60, "H4": 240, "D1": 1440}
 
@@ -62,14 +73,13 @@ def broker_symbol(symbol: str) -> str:
         return symbol + SYMBOL_SUFFIX
     return symbol
 
-
+# Use shared internal_symbol
 def internal_symbol(broker_sym: str) -> str:
     """Convert broker symbol to internal symbol (strip suffix)."""
-    if SYMBOL_SUFFIX and broker_sym.endswith(SYMBOL_SUFFIX):
-        return broker_sym[:-len(SYMBOL_SUFFIX)]
-    return broker_sym
+    return shared_internal_symbol(broker_sym)
 
-# Trading sessions (UTC hours)
+
+# Trading sessions are also in shared, but keep local for quick access
 SESSIONS = {
     "Sydney": (21, 6),
     "Tokyo": (0, 9),
@@ -84,8 +94,7 @@ spread_history: Dict[str, List[float]] = defaultdict(list)
 circuit_breaker_active = False
 last_ingest = None
 
-class ChatRequest(BaseModel):
-    message: str
+# Using ChatRequest from shared module
 
 class QualityStatus(str, Enum):
     HEALTHY = "healthy"
@@ -562,24 +571,7 @@ async def background_loop():
         await asyncio.sleep(1)  # Every 1 second for real-time monitoring
 
 
-async def call_claude(prompt: str, context: str = "") -> str:
-    if not ANTHROPIC_API_KEY:
-        return "[No API key]"
-    soul = (WORKSPACE / "SOUL.md").read_text() if (WORKSPACE / "SOUL.md").exists() else ""
-    try:
-        async with httpx.AsyncClient() as client:
-            r = await client.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={"x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json"},
-                json={"model": "claude-sonnet-4-20250514", "max_tokens": 1024, "system": soul,
-                      "messages": [{"role": "user", "content": f"{context}\n\n{prompt}" if context else prompt}]},
-                timeout=30.0
-            )
-            if r.status_code == 200:
-                return r.json()["content"][0]["text"]
-    except:
-        pass
-    return "[Error]"
+# Using shared call_claude - removed duplicate implementation
 
 
 @app.on_event("startup")
@@ -772,7 +764,8 @@ Circuit Breaker: {'ACTIVE' if circuit_breaker_active else 'OK'}
 Session: {get_current_session()}
 Last Ingest: {last_ingest.isoformat() if last_ingest else 'Never'}
 """
-    return {"response": await call_claude(request.message, context)}
+    response = await call_claude(request.message, context, agent_name=AGENT_NAME)
+    return {"response": response}
 
 
 # === Live Data Ingestion Endpoints (MT5 Bridge) ===

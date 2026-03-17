@@ -4,6 +4,7 @@ Strategy template matching, qualification, and selection
 """
 
 import os
+import sys
 import json
 import asyncio
 import httpx
@@ -12,32 +13,37 @@ from pathlib import Path
 from typing import Dict, List, Optional
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
-from pydantic import BaseModel
 from dataclasses import dataclass
+
+# Add shared module to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from shared import (
+    call_claude,
+    get_agent_url,
+    fetch_json,
+    post_json,
+    FOREX_SYMBOLS,
+    ChatRequest,
+)
 
 app = FastAPI(title="Tactician - Strategy Selection Agent", version="2.0")
 
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-CURATOR_URL = os.getenv("CURATOR_URL", "http://data-agent:8000")
-TECHNICAL_URL = os.getenv("TECHNICAL_URL", "http://technical-agent:8000")
-STRUCTURE_URL = os.getenv("STRUCTURE_URL", "http://structure-agent:8000")
-MACRO_URL = os.getenv("MACRO_URL", "http://macro-agent:8000")
-NEWS_URL = os.getenv("NEWS_URL", "http://news-agent:8000")
-SENTIMENT_URL = os.getenv("SENTIMENT_URL", "http://sentiment-agent:8000")
-REGIME_URL = os.getenv("REGIME_URL", "http://regime-agent:8000")
-ORCHESTRATOR_URL = os.getenv("ORCHESTRATOR_URL", "http://orchestrator-agent:8000")
 AGENT_NAME = "Tactician"
-WORKSPACE = Path("/app/workspace")
+CURATOR_URL = get_agent_url("curator")
+TECHNICAL_URL = get_agent_url("atlas")
+STRUCTURE_URL = get_agent_url("architect")
+MACRO_URL = get_agent_url("oracle")
+NEWS_URL = get_agent_url("sentinel")
+SENTIMENT_URL = get_agent_url("pulse")
+REGIME_URL = get_agent_url("compass")
+ORCHESTRATOR_URL = get_agent_url("orchestrator")
 
-SYMBOLS = ["EURUSD", "GBPUSD", "USDJPY", "GBPJPY", "USDCHF", "USDCAD", "EURAUD", "AUDNZD", "AUDUSD"]
+SYMBOLS = FOREX_SYMBOLS
 
 # Strategy cache
 strategy_data: Dict[str, dict] = {}
 
-
-class ChatRequest(BaseModel):
-    message: str
-
+# Using ChatRequest from shared module
 
 # ═══════════════════════════════════════════════════════════════
 # STRATEGY TEMPLATES
@@ -154,17 +160,7 @@ STRATEGY_TEMPLATES = {
 
 TREND_GRADES = {"A": 5, "B": 4, "C": 3, "D": 2, "F": 1}
 
-
-async def fetch_agent_data(url: str, endpoint: str) -> Optional[dict]:
-    """Fetch data from another agent."""
-    try:
-        async with httpx.AsyncClient() as client:
-            r = await client.get(f"{url}{endpoint}", timeout=5.0)
-            if r.status_code == 200:
-                return r.json()
-    except:
-        pass
-    return None
+# Using fetch_json from shared module for fetch_agent_data
 
 
 def check_regime_valid(strategy: dict, regime: str) -> tuple[bool, str]:
@@ -654,14 +650,14 @@ def calculate_entry_parameters(strategy_name: str, direction: str, price: float,
 async def evaluate_strategies(symbol: str) -> dict:
     """Evaluate all strategies for a symbol."""
     # Fetch data from all agents
-    regime_data = await fetch_agent_data(REGIME_URL, f"/api/regime/{symbol}")
-    technical_data = await fetch_agent_data(TECHNICAL_URL, f"/api/analysis/{symbol}")
-    structure_data = await fetch_agent_data(STRUCTURE_URL, f"/api/structure/{symbol}")
-    macro_data = await fetch_agent_data(MACRO_URL, f"/api/relative/{symbol}")
-    sentiment_data = await fetch_agent_data(SENTIMENT_URL, f"/api/sentiment/{symbol}")
-    news_data = await fetch_agent_data(NEWS_URL, f"/api/risk/{symbol}")
-    curator_data = await fetch_agent_data(CURATOR_URL, f"/api/snapshot/symbol/{symbol}")
-    market_data = await fetch_agent_data(CURATOR_URL, "/api/market")  # For current prices
+    regime_data = await fetch_json(f"{REGIME_URL}/api/regime/{symbol}")
+    technical_data = await fetch_json(f"{TECHNICAL_URL}/api/analysis/{symbol}")
+    structure_data = await fetch_json(f"{STRUCTURE_URL}/api/structure/{symbol}")
+    macro_data = await fetch_json(f"{MACRO_URL}/api/relative/{symbol}")
+    sentiment_data = await fetch_json(f"{SENTIMENT_URL}/api/sentiment/{symbol}")
+    news_data = await fetch_json(f"{NEWS_URL}/api/risk/{symbol}")
+    curator_data = await fetch_json(f"{CURATOR_URL}/api/snapshot/symbol/{symbol}")
+    market_data = await fetch_json(f"{CURATOR_URL}/api/market")  # For current prices
     
     # Extract key values
     regime = regime_data.get("primary_regime", "unknown") if regime_data else "unknown"
@@ -969,30 +965,25 @@ async def evaluate_strategies(symbol: str) -> dict:
 
 
 async def send_to_orchestrator(symbol: str, analysis: dict):
-    """Send strategy selection to Orchestrator."""
+    """Send strategy selection to Orchestrator using shared post_json."""
     if not analysis.get("selected_strategy"):
         return
     
-    try:
-        async with httpx.AsyncClient() as client:
-            await client.post(
-                f"{ORCHESTRATOR_URL}/api/ingest",
-                json={
-                    "agent_id": "strategy",
-                    "agent_name": AGENT_NAME,
-                    "output_type": "signal",
-                    "timestamp": datetime.utcnow().isoformat(),
-                    "data": {
-                        "symbol": symbol,
-                        "direction": analysis.get("entry_parameters", {}).get("direction", "NEUTRAL"),
-                        "confidence": analysis["selected_strategy"]["score"] / 100,
-                        "reason": f"{analysis['selected_strategy']['name']} ({analysis['selected_strategy']['score']}%)",
-                    },
-                },
-                timeout=5.0
-            )
-    except:
-        pass
+    await post_json(
+        f"{ORCHESTRATOR_URL}/api/ingest",
+        {
+            "agent_id": "strategy",
+            "agent_name": AGENT_NAME,
+            "output_type": "signal",
+            "timestamp": datetime.utcnow().isoformat(),
+            "data": {
+                "symbol": symbol,
+                "direction": analysis.get("entry_parameters", {}).get("direction", "NEUTRAL"),
+                "confidence": analysis["selected_strategy"]["score"] / 100,
+                "reason": f"{analysis['selected_strategy']['name']} ({analysis['selected_strategy']['score']}%)",
+            },
+        }
+    )
 
 
 async def background_analysis():
@@ -1011,24 +1002,7 @@ async def background_analysis():
         await asyncio.sleep(60)
 
 
-async def call_claude(prompt: str, context: str = "") -> str:
-    if not ANTHROPIC_API_KEY:
-        return "[No API key]"
-    soul = (WORKSPACE / "SOUL.md").read_text() if (WORKSPACE / "SOUL.md").exists() else ""
-    try:
-        async with httpx.AsyncClient() as client:
-            r = await client.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={"x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json"},
-                json={"model": "claude-sonnet-4-20250514", "max_tokens": 2048, "system": soul,
-                      "messages": [{"role": "user", "content": f"{context}\n\n{prompt}" if context else prompt}]},
-                timeout=60.0
-            )
-            if r.status_code == 200:
-                return r.json()["content"][0]["text"]
-    except:
-        pass
-    return "[Error]"
+# Using shared call_claude - removed duplicate implementation
 
 
 @app.on_event("startup")
@@ -1204,7 +1178,8 @@ async def home():
 @app.post("/chat")
 async def chat(request: ChatRequest):
     context = f"Strategy Data:\n{json.dumps(strategy_data, indent=2, default=str)[:6000]}"
-    return {"response": await call_claude(request.message, context)}
+    response = await call_claude(request.message, context, agent_name=AGENT_NAME)
+    return {"response": response}
 
 
 @app.get("/api/strategies")
@@ -1242,8 +1217,8 @@ async def get_setups(symbol: str):
     market_context = evaluation.get("market_context", {})
     
     # Get price from market data and ATR from technical analysis
-    market_data = await fetch_agent_data(CURATOR_URL, "/api/market")
-    technical_data = await fetch_agent_data(TECHNICAL_URL, f"/api/analysis/{symbol}")
+    market_data = await fetch_json(f"{CURATOR_URL}/api/market")
+    technical_data = await fetch_json(f"{TECHNICAL_URL}/api/analysis/{symbol}")
     
     price = 1.0
     atr = 0.001
@@ -1267,7 +1242,7 @@ async def get_setups(symbol: str):
             atr = price * 0.005  # ~50 pips for majors
     
     # Get structure for invalidation levels
-    structure_data = await fetch_agent_data(STRUCTURE_URL, f"/api/structure/{symbol}")
+    structure_data = await fetch_json(f"{STRUCTURE_URL}/api/structure/{symbol}")
     
     # Add EMAs to structure_data for pullback calculations
     if structure_data is None:

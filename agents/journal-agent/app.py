@@ -4,6 +4,7 @@ Trade journaling, review, lessons learned, pattern detection
 """
 
 import os
+import sys
 import json
 import asyncio
 import httpx
@@ -16,6 +17,15 @@ from pydantic import BaseModel
 from enum import Enum
 import uuid
 
+# Add shared module to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from shared import (
+    call_claude,
+    get_agent_url,
+    post_json,
+    ChatRequest,
+)
+
 # Import dashboard generator
 try:
     from dashboard import generate_dashboard
@@ -24,18 +34,13 @@ except ImportError:
 
 app = FastAPI(title="Chronicle - Trade Journal Agent", version="1.0")
 
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-ORCHESTRATOR_URL = os.getenv("ORCHESTRATOR_URL", "http://orchestrator-agent:8000")
 AGENT_NAME = "Chronicle"
+ORCHESTRATOR_URL = get_agent_url("orchestrator")
 WORKSPACE = Path("/app/workspace")
 JOURNAL_DIR = WORKSPACE / "journal"
 
 # Ensure journal directory exists
 JOURNAL_DIR.mkdir(parents=True, exist_ok=True)
-
-
-class ChatRequest(BaseModel):
-    message: str
 
 
 class TradeStatus(str, Enum):
@@ -278,24 +283,7 @@ Provide:
     return "Review generation failed"
 
 
-async def call_claude(prompt: str, context: str = "") -> str:
-    if not ANTHROPIC_API_KEY:
-        return "[No API key]"
-    soul = (WORKSPACE / "SOUL.md").read_text() if (WORKSPACE / "SOUL.md").exists() else ""
-    try:
-        async with httpx.AsyncClient() as client:
-            r = await client.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={"x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json"},
-                json={"model": "claude-sonnet-4-20250514", "max_tokens": 2048, "system": soul,
-                      "messages": [{"role": "user", "content": f"{context}\n\n{prompt}" if context else prompt}]},
-                timeout=60.0
-            )
-            if r.status_code == 200:
-                return r.json()["content"][0]["text"]
-    except:
-        pass
-    return "[Error]"
+# Using shared call_claude - removed duplicate implementation
 
 
 @app.on_event("startup")
@@ -442,7 +430,8 @@ async def chat(request: ChatRequest):
     stats = calculate_statistics()
     recent = load_recent_trades(7)
     context = f"Statistics: {json.dumps(stats)}\nRecent trades: {len(recent)}"
-    return {"response": await call_claude(request.message, context)}
+    response = await call_claude(request.message, context, agent_name=AGENT_NAME)
+    return {"response": response}
 
 
 @app.post("/api/trade/propose")

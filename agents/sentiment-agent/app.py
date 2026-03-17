@@ -4,6 +4,7 @@ Market sentiment, retail positioning, contrarian analysis
 """
 
 import os
+import sys
 import json
 import asyncio
 import httpx
@@ -13,26 +14,35 @@ from pathlib import Path
 from typing import Dict, List, Optional
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
-from pydantic import BaseModel
 from enum import Enum
 import random
+
+# Add shared module to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from shared import (
+    call_claude,
+    get_agent_url,
+    post_json,
+    FOREX_SYMBOLS,
+    ChatRequest,
+)
+from pydantic import BaseModel
 
 app = FastAPI(title="Pulse - Sentiment & Positioning Agent", version="2.2")
 
 import anthropic
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-ORCHESTRATOR_URL = os.getenv("ORCHESTRATOR_URL", "http://orchestrator-agent:8000")
+AGENT_NAME = "Pulse"
+ORCHESTRATOR_URL = get_agent_url("orchestrator")
 MYFXBOOK_EMAIL = os.getenv("MYFXBOOK_EMAIL", "")
 MYFXBOOK_PASSWORD = os.getenv("MYFXBOOK_PASSWORD", "")
-AGENT_NAME = "Pulse"
-WORKSPACE = Path("/app/workspace")
 
 # Myfxbook session management
 myfxbook_session: str = ""
 myfxbook_session_time: datetime = None
 
-SYMBOLS = ["EURUSD", "GBPUSD", "USDJPY", "GBPJPY", "USDCHF", "USDCAD", "EURAUD", "AUDNZD", "AUDUSD"]
+SYMBOLS = FOREX_SYMBOLS
 
 # Sentiment cache with TTL
 sentiment_data: Dict[str, dict] = {}
@@ -40,10 +50,7 @@ retail_positioning_cache: Dict[str, dict] = {}
 retail_cache_time: datetime = None
 CACHE_TTL_MINUTES = 5
 
-
-class ChatRequest(BaseModel):
-    message: str
-
+# Using ChatRequest from shared module
 
 class SentimentClassification(str, Enum):
     TREND_SUPPORTIVE = "trend_supportive"
@@ -1039,27 +1046,22 @@ def analyze_symbol(symbol: str) -> dict:
 
 
 async def send_to_orchestrator(symbol: str, analysis: dict):
-    """Send analysis to Orchestrator."""
-    try:
-        async with httpx.AsyncClient() as client:
-            await client.post(
-                f"{ORCHESTRATOR_URL}/api/ingest",
-                json={
-                    "agent_id": "sentiment",
-                    "agent_name": AGENT_NAME,
-                    "output_type": "signal",
-                    "timestamp": datetime.utcnow().isoformat(),
-                    "data": {
-                        "symbol": symbol,
-                        "direction": analysis["positioning_bias"],
-                        "confidence": analysis["confidence"] / 100,
-                        "reason": f"{analysis['classification']} - {analysis['scores']['contrarian']} contrarian",
-                    },
-                },
-                timeout=5.0
-            )
-    except:
-        pass
+    """Send analysis to Orchestrator using shared post_json."""
+    await post_json(
+        f"{ORCHESTRATOR_URL}/api/ingest",
+        {
+            "agent_id": "sentiment",
+            "agent_name": AGENT_NAME,
+            "output_type": "signal",
+            "timestamp": datetime.utcnow().isoformat(),
+            "data": {
+                "symbol": symbol,
+                "direction": analysis["positioning_bias"],
+                "confidence": analysis["confidence"] / 100,
+                "reason": f"{analysis['classification']} - {analysis['scores']['contrarian']} contrarian",
+            },
+        }
+    )
 
 
 async def background_analysis():
@@ -1084,24 +1086,7 @@ async def background_analysis():
         await asyncio.sleep(300)  # Update every 5 minutes
 
 
-async def call_claude(prompt: str, context: str = "") -> str:
-    if not ANTHROPIC_API_KEY:
-        return "[No API key]"
-    soul = (WORKSPACE / "SOUL.md").read_text() if (WORKSPACE / "SOUL.md").exists() else ""
-    try:
-        async with httpx.AsyncClient() as client:
-            r = await client.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={"x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json"},
-                json={"model": "claude-sonnet-4-20250514", "max_tokens": 2048, "system": soul,
-                      "messages": [{"role": "user", "content": f"{context}\n\n{prompt}" if context else prompt}]},
-                timeout=60.0
-            )
-            if r.status_code == 200:
-                return r.json()["content"][0]["text"]
-    except:
-        pass
-    return "[Error]"
+# Using shared call_claude - removed duplicate implementation
 
 
 @app.on_event("startup")
@@ -1334,7 +1319,8 @@ async def home():
 @app.post("/chat")
 async def chat(request: ChatRequest):
     context = f"Sentiment Data:\n{json.dumps(sentiment_data, indent=2, default=str)[:6000]}"
-    return {"response": await call_claude(request.message, context)}
+    response = await call_claude(request.message, context, agent_name=AGENT_NAME)
+    return {"response": response}
 
 
 @app.get("/api/sentiment")

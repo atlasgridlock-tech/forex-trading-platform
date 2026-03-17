@@ -5,6 +5,7 @@ MOST DANGEROUS AGENT - MAXIMUM SAFETY
 """
 
 import os
+import sys
 import json
 import asyncio
 import httpx
@@ -19,12 +20,24 @@ from enum import Enum
 from dataclasses import dataclass
 import time
 
+# Add shared module to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from shared import (
+    call_claude,
+    get_agent_url,
+    post_json,
+    broker_symbol as shared_broker_symbol,
+    internal_symbol as shared_internal_symbol,
+    SYMBOL_SUFFIX,
+    ChatRequest,
+)
+
 app = FastAPI(title="Executor - Execution Agent", version="2.0")
 
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-GUARDIAN_URL = os.getenv("GUARDIAN_URL", "http://risk-agent:8000")
-PORTFOLIO_URL = os.getenv("PORTFOLIO_URL", "http://portfolio-agent:8000")
-ORCHESTRATOR_URL = os.getenv("ORCHESTRATOR_URL", "http://orchestrator-agent:8000")
+AGENT_NAME = "Executor"
+GUARDIAN_URL = get_agent_url("guardian")
+PORTFOLIO_URL = get_agent_url("balancer")
+ORCHESTRATOR_URL = get_agent_url("orchestrator")
 
 # MT5 File Bridge paths
 MT5_FILES_PATH = Path(os.getenv("MT5_FILES_PATH", "/mt5files"))
@@ -32,34 +45,25 @@ MT5_COMMAND_FILE = MT5_FILES_PATH / "trade_commands.json"
 MT5_RESULT_FILE = MT5_FILES_PATH / "trade_results.json"
 MT5_STATUS_FILE = MT5_FILES_PATH / "bridge_status.json"
 
-# Broker symbol configuration
-# Some brokers use suffixes like ".s", ".r", "m" etc.
-SYMBOL_SUFFIX = os.getenv("SYMBOL_SUFFIX", "")  # e.g., ".s" for JustMarkets
+# Broker symbol configuration (using shared module)
 
 # CRITICAL: Default to paper mode
 EXECUTION_MODE = os.getenv("EXECUTION_MODE", "paper")  # paper, shadow_live, guarded_live
 LIVE_MODE_CONFIRMED = os.getenv("LIVE_MODE_CONFIRMED", "false").lower() == "true"
 
 
+# Using shared broker_symbol and internal_symbol
 def broker_symbol(symbol: str) -> str:
-    """Convert internal symbol to broker symbol (add suffix)."""
-    if SYMBOL_SUFFIX and not symbol.endswith(SYMBOL_SUFFIX):
-        return symbol + SYMBOL_SUFFIX
-    return symbol
+    """Convert internal symbol to broker symbol."""
+    return shared_broker_symbol(symbol)
 
 
 def internal_symbol(broker_sym: str) -> str:
-    """Convert broker symbol to internal symbol (strip suffix)."""
-    if SYMBOL_SUFFIX and broker_sym.endswith(SYMBOL_SUFFIX):
-        return broker_sym[:-len(SYMBOL_SUFFIX)]
-    return broker_sym
-
-AGENT_NAME = "Executor"
-WORKSPACE = Path("/app/workspace")
+    """Convert broker symbol to internal symbol."""
+    return shared_internal_symbol(broker_sym)
 
 
-class ChatRequest(BaseModel):
-    message: str
+# Using ChatRequest from shared module
 
 
 class OrderRequest(BaseModel):
@@ -635,24 +639,7 @@ async def execute_order(order: OrderRequest) -> dict:
     return receipt
 
 
-async def call_claude(prompt: str, context: str = "") -> str:
-    if not ANTHROPIC_API_KEY:
-        return "[No API key]"
-    soul = (WORKSPACE / "SOUL.md").read_text() if (WORKSPACE / "SOUL.md").exists() else ""
-    try:
-        async with httpx.AsyncClient() as client:
-            r = await client.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={"x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json"},
-                json={"model": "claude-sonnet-4-20250514", "max_tokens": 2048, "system": soul,
-                      "messages": [{"role": "user", "content": f"{context}\n\n{prompt}" if context else prompt}]},
-                timeout=60.0
-            )
-            if r.status_code == 200:
-                return r.json()["content"][0]["text"]
-    except:
-        pass
-    return "[Error]"
+# Using shared call_claude - removed duplicate implementation
 
 
 @app.on_event("startup")
@@ -892,7 +879,8 @@ async def chat(request: ChatRequest):
 - Total Executions: {len(execution_receipts)}
 - Open Positions: {len(paper_positions)}
 - Recent Receipts: {json.dumps(execution_receipts[-3:], default=str)}"""
-    return {"response": await call_claude(request.message, context)}
+    response = await call_claude(request.message, context, agent_name=AGENT_NAME)
+    return {"response": response}
 
 
 @app.post("/api/execute")

@@ -134,22 +134,27 @@ curl -X POST http://localhost:3020/api/evaluate \
 ```
 
 ## Remaining Work
-1. **P2:** Complete refactoring of remaining 10 agents (regime, technical, structure, analytics done)
-2. **P2:** Documentation updates
-3. **P3:** Position lifecycle management (partial TPs, trailing stops)
+1. **P3:** Position lifecycle management (partial TPs, trailing stops)
+2. **P3:** Performance optimization
+3. **P3:** Extended documentation
 
 ## Refactoring Progress
 
-### Completed
-- ✅ Created `/app/agents/shared/` module with common utilities
-- ✅ `utils.py` - Symbol utilities, session detection, Claude API, HTTP helpers
-- ✅ `base_agent.py` - Base classes for agents
-- ✅ `__init__.py` - Clean imports
-- ✅ Refactored `regime-agent` as template
-- ✅ Refactored `technical-agent` 
-- ✅ Refactored `structure-agent`
-- ✅ Refactored `analytics-agent`
-- ✅ Integrated Analytics Agent (Insight) into orchestrator
+### Completed - All 14 Agents Refactored ✅
+- ✅ `data-agent` (Curator)
+- ✅ `news-agent` (Sentinel)
+- ✅ `macro-agent` (Oracle)
+- ✅ `technical-agent` (Atlas Jr.)
+- ✅ `structure-agent` (Architect)
+- ✅ `sentiment-agent` (Pulse)
+- ✅ `regime-agent` (Compass)
+- ✅ `strategy-agent` (Tactician)
+- ✅ `risk-agent` (Guardian)
+- ✅ `portfolio-agent` (Balancer)
+- ✅ `execution-agent` (Executor)
+- ✅ `journal-agent` (Chronicle)
+- ✅ `governance-agent` (Arbiter)
+- ✅ `analytics-agent` (Insight)
 
 ### Shared Module Benefits
 - ~465 lines of duplicate code eliminated
