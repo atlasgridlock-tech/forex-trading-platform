@@ -7,6 +7,8 @@ User requested to analyze, debug, and fix a multi-agent forex trading platform. 
 
 ### Quick Links
 - **[How It Works - Complete Guide](/app/docs/HOW_IT_WORKS.md)** - Full A-Z system documentation
+- **[Quick Start Tutorial](/app/docs/QUICK_START_TUTORIAL.md)** - Interactive hands-on guide
+- **[Video Script](/app/docs/VIDEO_SCRIPT.md)** - 10-minute walkthrough script
 - **[Agent Directory](/app/docs/AGENTS_DIRECTORY.md)** - Quick reference for all agents
 - **[Agent Data Reference](/app/docs/Agent_Data_Reference.md)** - Data sources and formats
 - **[Shared Module Guide](/app/agents/shared/README.md)** - Common code library
@@ -150,31 +152,11 @@ curl -X POST http://localhost:3020/api/evaluate \
 ## Documentation Complete ✅ (December 2025)
 
 ### Documents Created
-- **[HOW_IT_WORKS.md](/app/docs/HOW_IT_WORKS.md)** - Complete A-Z system guide covering:
-  - Executive summary
-  - System architecture overview
-  - Trading flow from data to trade
-  - Agent swarm architecture
-  - Data pipeline documentation
-  - Decision making process
-  - Trade execution & lifecycle
-  - Risk management
-  - Performance optimization
-  - Running instructions
-  - Monitoring & debugging
-  - Configuration reference
-
-- **[AGENTS_DIRECTORY.md](/app/docs/AGENTS_DIRECTORY.md)** - Quick reference for all 14 agents with:
-  - Port numbers
-  - Key endpoints
-  - Primary outputs
-  - Data flows
-
-- **[README.md](/app/README.md)** - Updated main README with:
-  - Quick start guide
-  - Architecture diagram
-  - API examples
-  - Configuration reference
+- **[HOW_IT_WORKS.md](/app/docs/HOW_IT_WORKS.md)** - Complete A-Z system guide (668 lines)
+- **[QUICK_START_TUTORIAL.md](/app/docs/QUICK_START_TUTORIAL.md)** - Interactive hands-on tutorial with checkpoints
+- **[VIDEO_SCRIPT.md](/app/docs/VIDEO_SCRIPT.md)** - 10-minute walkthrough video script with timestamps
+- **[AGENTS_DIRECTORY.md](/app/docs/AGENTS_DIRECTORY.md)** - Quick reference for all 14 agents
+- **[README.md](/app/README.md)** - Updated main project README
 
 - **Agent READMEs**:
   - `/app/agents/orchestrator-agent/README.md` - Nexus documentation
