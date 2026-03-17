@@ -112,6 +112,7 @@ async def call_claude(
 ) -> str:
     """
     Call Claude API with standard error handling.
+    Uses pooled HTTP client for efficiency.
     
     Args:
         prompt: The user message/prompt
@@ -140,58 +141,99 @@ async def call_claude(
     user_message = f"{context}\n\n{prompt}" if context else prompt
     
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={
-                    "x-api-key": ANTHROPIC_API_KEY,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json",
-                },
-                json={
-                    "model": model,
-                    "max_tokens": max_tokens,
-                    "system": system_prompt,
-                    "messages": [{"role": "user", "content": user_message}],
-                },
-                timeout=60.0,
-            )
-            
-            if response.status_code == 200:
-                return response.json()["content"][0]["text"]
-            else:
-                return f"[{agent_name}] API error: {response.status_code}"
+        # Use pooled client for better performance
+        from .performance import get_pooled_client
+        client = await get_pooled_client()
+        
+        response = await client.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            json={
+                "model": model,
+                "max_tokens": max_tokens,
+                "system": system_prompt,
+                "messages": [{"role": "user", "content": user_message}],
+            },
+            timeout=60.0,
+        )
+        
+        if response.status_code == 200:
+            return response.json()["content"][0]["text"]
+        else:
+            return f"[{agent_name}] API error: {response.status_code}"
                 
     except httpx.TimeoutException:
         return f"[{agent_name}] Request timed out"
+    except ImportError:
+        # Fallback if performance module not available
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    "https://api.anthropic.com/v1/messages",
+                    headers={
+                        "x-api-key": ANTHROPIC_API_KEY,
+                        "anthropic-version": "2023-06-01",
+                        "content-type": "application/json",
+                    },
+                    json={
+                        "model": model,
+                        "max_tokens": max_tokens,
+                        "system": system_prompt,
+                        "messages": [{"role": "user", "content": user_message}],
+                    },
+                    timeout=60.0,
+                )
+                if response.status_code == 200:
+                    return response.json()["content"][0]["text"]
+                return f"[{agent_name}] API error: {response.status_code}"
+        except Exception as e:
+            return f"[{agent_name}] Error: {str(e)}"
     except Exception as e:
         return f"[{agent_name}] Error: {str(e)}"
 
 
 # ═══════════════════════════════════════════════════════════════
-# HTTP CLIENT HELPERS
+# HTTP CLIENT HELPERS (Uses pooled connections)
 # ═══════════════════════════════════════════════════════════════
 
 async def fetch_json(url: str, timeout: float = 5.0) -> Optional[dict]:
-    """Fetch JSON from URL with error handling."""
+    """Fetch JSON from URL with error handling using pooled client."""
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(url, timeout=timeout)
-            if response.status_code == 200:
-                return response.json()
-    except:
+        from .performance import pooled_get
+        return await pooled_get(url, timeout=timeout)
+    except ImportError:
+        # Fallback if performance module not available
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, timeout=timeout)
+                if response.status_code == 200:
+                    return response.json()
+        except:
+            pass
+    except Exception:
         pass
     return None
 
 
 async def post_json(url: str, data: dict, timeout: float = 10.0) -> Optional[dict]:
-    """Post JSON to URL with error handling."""
+    """Post JSON to URL with error handling using pooled client."""
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(url, json=data, timeout=timeout)
-            if response.status_code == 200:
-                return response.json()
-    except:
+        from .performance import pooled_post
+        return await pooled_post(url, data, timeout=timeout)
+    except ImportError:
+        # Fallback if performance module not available
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(url, json=data, timeout=timeout)
+                if response.status_code == 200:
+                    return response.json()
+        except:
+            pass
+    except Exception:
         pass
     return None
 

@@ -283,12 +283,12 @@ def get_max_positions_for_mode() -> int:
 
 
 async def fetch_regime(symbol: str) -> str:
-    """Fetch regime from Compass."""
+    """Fetch regime from Compass using pooled client."""
+    from shared import pooled_get
     try:
-        async with httpx.AsyncClient() as client:
-            r = await client.get(f"{REGIME_URL}/api/regime/{symbol}", timeout=5.0)
-            if r.status_code == 200:
-                return r.json().get("primary_regime", "unknown")
+        result = await pooled_get(f"{REGIME_URL}/api/regime/{symbol}", timeout=5.0)
+        if result:
+            return result.get("primary_regime", "unknown")
     except:
         pass
     return "unknown"

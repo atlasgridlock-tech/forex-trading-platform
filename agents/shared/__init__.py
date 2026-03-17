@@ -79,6 +79,26 @@ from .base_agent import (
     ChatRequest,
 )
 
+from .performance import (
+    # HTTP Client Pool
+    get_pooled_client,
+    pooled_get,
+    pooled_post,
+    batch_fetch,
+    
+    # Caching
+    InMemoryCache,
+    RedisCache,
+    cached,
+    cached_fetch,
+    cache_key,
+    get_cache,
+    
+    # Metrics
+    PerformanceMetrics,
+    get_metrics,
+)
+
 __all__ = [
     # Utils
     "broker_symbol",
@@ -114,4 +134,18 @@ __all__ = [
     "BaseAgent",
     "AnalysisAgent",
     "ChatRequest",
+    
+    # Performance
+    "get_pooled_client",
+    "pooled_get",
+    "pooled_post",
+    "batch_fetch",
+    "InMemoryCache",
+    "RedisCache",
+    "cached",
+    "cached_fetch",
+    "cache_key",
+    "get_cache",
+    "PerformanceMetrics",
+    "get_metrics",
 ]

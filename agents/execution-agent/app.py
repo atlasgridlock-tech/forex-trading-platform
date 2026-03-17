@@ -205,24 +205,23 @@ def check_rate_limits(symbol: str) -> tuple[bool, str]:
 
 
 async def check_guardian_approval(order: OrderRequest) -> tuple[bool, dict]:
-    """Get Guardian's approval for this trade."""
+    """Get Guardian's approval for this trade using pooled client."""
+    from shared import pooled_post
     try:
-        async with httpx.AsyncClient() as client:
-            r = await client.post(
-                f"{GUARDIAN_URL}/api/evaluate",
-                json={
-                    "symbol": order.symbol,
-                    "direction": order.direction,
-                    "entry": order.entry_price or 0,
-                    "stop": order.stop_loss,
-                    "take_profit": order.take_profit,
-                    "confidence": 0.7,
-                },
-                timeout=10.0
-            )
-            if r.status_code == 200:
-                result = r.json()
-                return result.get("approved", False), result
+        result = await pooled_post(
+            f"{GUARDIAN_URL}/api/evaluate",
+            {
+                "symbol": order.symbol,
+                "direction": order.direction,
+                "entry": order.entry_price or 0,
+                "stop": order.stop_loss,
+                "take_profit": order.take_profit,
+                "confidence": 0.7,
+            },
+            timeout=10.0
+        )
+        if result:
+            return result.get("approved", False), result
     except Exception as e:
         return False, {"error": str(e)}
     
@@ -230,47 +229,41 @@ async def check_guardian_approval(order: OrderRequest) -> tuple[bool, dict]:
 
 
 async def notify_portfolio(order: OrderRequest, receipt: dict):
-    """Notify Portfolio agent of new position."""
-    try:
-        async with httpx.AsyncClient() as client:
-            await client.post(
-                f"{PORTFOLIO_URL}/api/position/add",
-                json={
-                    "symbol": order.symbol,
-                    "direction": order.direction,
-                    "risk_pct": receipt.get("risk_pct", 0.25),
-                    "entry_price": receipt.get("fill_price", order.entry_price),
-                },
-                timeout=5.0
-            )
-    except:
-        pass
+    """Notify Portfolio agent of new position using pooled client."""
+    from shared import pooled_post
+    await pooled_post(
+        f"{PORTFOLIO_URL}/api/position/add",
+        {
+            "symbol": order.symbol,
+            "direction": order.direction,
+            "risk_pct": receipt.get("risk_pct", 0.25),
+            "entry_price": receipt.get("fill_price", order.entry_price),
+        },
+        timeout=5.0
+    )
 
 
 async def send_to_orchestrator(receipt: dict):
-    """Send execution receipt to Orchestrator."""
-    try:
-        async with httpx.AsyncClient() as client:
-            await client.post(
-                f"{ORCHESTRATOR_URL}/api/ingest",
-                json={
-                    "agent_id": "execution",
-                    "agent_name": AGENT_NAME,
-                    "output_type": "execution",
-                    "timestamp": datetime.utcnow().isoformat(),
-                    "data": {
-                        "order_id": receipt["order_id"],
-                        "symbol": receipt["symbol"],
-                        "direction": receipt["direction"],
-                        "status": receipt["status"],
-                        "fill_price": receipt.get("fill_price"),
-                        "health_score": receipt.get("health_score"),
-                    },
-                },
-                timeout=5.0
-            )
-    except:
-        pass
+    """Send execution receipt to Orchestrator using pooled client."""
+    from shared import pooled_post
+    await pooled_post(
+        f"{ORCHESTRATOR_URL}/api/ingest",
+        {
+            "agent_id": "execution",
+            "agent_name": AGENT_NAME,
+            "output_type": "execution",
+            "timestamp": datetime.utcnow().isoformat(),
+            "data": {
+                "order_id": receipt["order_id"],
+                "symbol": receipt["symbol"],
+                "direction": receipt["direction"],
+                "status": receipt["status"],
+                "fill_price": receipt.get("fill_price"),
+                "health_score": receipt.get("health_score"),
+            },
+        },
+        timeout=5.0
+    )
 
 
 def calculate_health_score(receipt: dict) -> int:

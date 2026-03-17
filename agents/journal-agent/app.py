@@ -268,16 +268,19 @@ Provide:
 3. Key lesson (one sentence)"""
 
     try:
-        async with httpx.AsyncClient() as client:
-            r = await client.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={"x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json"},
-                json={"model": "claude-sonnet-4-20250514", "max_tokens": 500,
-                      "messages": [{"role": "user", "content": prompt}]},
-                timeout=30.0
-            )
-            if r.status_code == 200:
-                return r.json()["content"][0]["text"]
+        # Use pooled HTTP client
+        from shared import get_pooled_client
+        client = await get_pooled_client()
+        
+        r = await client.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={"x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json"},
+            json={"model": "claude-sonnet-4-20250514", "max_tokens": 500,
+                  "messages": [{"role": "user", "content": prompt}]},
+            timeout=30.0
+        )
+        if r.status_code == 200:
+            return r.json()["content"][0]["text"]
     except:
         pass
     return "Review generation failed"

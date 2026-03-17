@@ -91,30 +91,34 @@ class Trend(str, Enum):
 # ═══════════════════════════════════════════════════════════════
 
 async def fetch_fred_series(series_id: str) -> Optional[float]:
-    """Fetch latest value from FRED API."""
+    """Fetch latest value from FRED API using pooled client."""
     if not FRED_API_KEY:
         return None
     
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(
-                "https://api.stlouisfed.org/fred/series/observations",
-                params={
-                    "series_id": series_id,
-                    "api_key": FRED_API_KEY,
-                    "file_type": "json",
-                    "sort_order": "desc",
-                    "limit": 5
-                }
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                observations = data.get("observations", [])
-                for obs in observations:
-                    value = obs.get("value", ".")
-                    if value != ".":
-                        return float(value)
+        # Use pooled HTTP client
+        from shared import get_pooled_client
+        client = await get_pooled_client()
+        
+        response = await client.get(
+            "https://api.stlouisfed.org/fred/series/observations",
+            params={
+                "series_id": series_id,
+                "api_key": FRED_API_KEY,
+                "file_type": "json",
+                "sort_order": "desc",
+                "limit": 5
+            },
+            timeout=10.0
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            observations = data.get("observations", [])
+            for obs in observations:
+                value = obs.get("value", ".")
+                if value != ".":
+                    return float(value)
     except Exception as e:
         print(f"[Oracle] Error fetching FRED {series_id}: {e}")
     

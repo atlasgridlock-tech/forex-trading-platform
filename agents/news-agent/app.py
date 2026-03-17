@@ -352,31 +352,34 @@ async def fetch_headlines():
     
     new_headlines = []
     
+    # Import pooled client
+    from shared import get_pooled_client
+    client = await get_pooled_client()
+    
     for source_name, feed_url in feeds:
         try:
-            async with httpx.AsyncClient() as client:
-                r = await client.get(feed_url, timeout=10.0, follow_redirects=True)
-                if r.status_code == 200:
-                    feed = feedparser.parse(r.text)
-                    for entry in feed.entries[:30]:  # Get more entries per feed
-                        # Parse time
-                        pub_time = entry.get("published", "")
-                        if pub_time:
-                            try:
-                                from email.utils import parsedate_to_datetime
-                                dt = parsedate_to_datetime(pub_time)
-                                time_str = dt.strftime("%H:%M")
-                            except:
-                                time_str = pub_time[:5]
-                        else:
-                            time_str = ""
-                        
-                        new_headlines.append({
-                            "title": entry.get("title", "").replace('<![CDATA[', '').replace(']]>', ''),
-                            "source": source_name,
-                            "time": time_str,
-                            "link": entry.get("link", ""),
-                        })
+            r = await client.get(feed_url, timeout=10.0, follow_redirects=True)
+            if r.status_code == 200:
+                feed = feedparser.parse(r.text)
+                for entry in feed.entries[:30]:  # Get more entries per feed
+                    # Parse time
+                    pub_time = entry.get("published", "")
+                    if pub_time:
+                        try:
+                            from email.utils import parsedate_to_datetime
+                            dt = parsedate_to_datetime(pub_time)
+                            time_str = dt.strftime("%H:%M")
+                        except:
+                            time_str = pub_time[:5]
+                    else:
+                        time_str = ""
+                    
+                    new_headlines.append({
+                        "title": entry.get("title", "").replace('<![CDATA[', '').replace(']]>', ''),
+                        "source": source_name,
+                        "time": time_str,
+                        "link": entry.get("link", ""),
+                    })
         except Exception as e:
             print(f"[Sentinel] Error fetching {source_name}: {e}")
     

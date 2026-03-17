@@ -109,69 +109,72 @@ async def fetch_myfxbook_sentiment() -> Dict[str, dict]:
         return FALLBACK_POSITIONING
     
     try:
-        async with httpx.AsyncClient(timeout=20.0) as client:
-            # Login first
-            login_url = f"https://www.myfxbook.com/api/login.json?email={MYFXBOOK_EMAIL}&password={MYFXBOOK_PASSWORD}"
-            login_response = await client.get(login_url)
+        # Use pooled HTTP client
+        from shared import get_pooled_client
+        client = await get_pooled_client()
+        
+        # Login first
+        login_url = f"https://www.myfxbook.com/api/login.json?email={MYFXBOOK_EMAIL}&password={MYFXBOOK_PASSWORD}"
+        login_response = await client.get(login_url, timeout=20.0)
+        
+        if login_response.status_code != 200:
+            print(f"[Pulse] ❌ Myfxbook login failed: HTTP {login_response.status_code}")
+            return FALLBACK_POSITIONING
+        
+        login_data = login_response.json()
+        if login_data.get("error"):
+            print(f"[Pulse] ❌ Myfxbook login error: {login_data.get('message')}")
+            return FALLBACK_POSITIONING
+        
+        session = login_data.get("session", "")
+        if not session:
+            print("[Pulse] ❌ No session token received")
+            return FALLBACK_POSITIONING
+        
+        print(f"[Pulse] ✅ Myfxbook login successful")
+        
+        # Fetch sentiment immediately with the session
+        sentiment_url = f"https://www.myfxbook.com/api/get-community-outlook.json?session={session}"
+        response = await client.get(sentiment_url, timeout=20.0)
+        
+        if response.status_code == 200:
+            data = response.json()
             
-            if login_response.status_code != 200:
-                print(f"[Pulse] ❌ Myfxbook login failed: HTTP {login_response.status_code}")
-                return FALLBACK_POSITIONING
-            
-            login_data = login_response.json()
-            if login_data.get("error"):
-                print(f"[Pulse] ❌ Myfxbook login error: {login_data.get('message')}")
-                return FALLBACK_POSITIONING
-            
-            session = login_data.get("session", "")
-            if not session:
-                print("[Pulse] ❌ No session token received")
-                return FALLBACK_POSITIONING
-            
-            print(f"[Pulse] ✅ Myfxbook login successful")
-            
-            # Fetch sentiment immediately with the session
-            sentiment_url = f"https://www.myfxbook.com/api/get-community-outlook.json?session={session}"
-            response = await client.get(sentiment_url)
-            
-            if response.status_code == 200:
-                data = response.json()
+            if not data.get("error"):
+                symbols_data = data.get("symbols", [])
+                positions = {}
                 
-                if not data.get("error"):
-                    symbols_data = data.get("symbols", [])
-                    positions = {}
+                for item in symbols_data:
+                    name = item.get("name", "").upper().replace("/", "")
                     
-                    for item in symbols_data:
-                        name = item.get("name", "").upper().replace("/", "")
+                    # Map Myfxbook symbol names to our format
+                    if name in SYMBOLS:
+                        long_pct = int(item.get("longPercentage", 50))
+                        short_pct = int(item.get("shortPercentage", 50))
                         
-                        # Map Myfxbook symbol names to our format
-                        if name in SYMBOLS:
-                            long_pct = int(item.get("longPercentage", 50))
-                            short_pct = int(item.get("shortPercentage", 50))
-                            
-                            positions[name] = {
-                                "long": long_pct,
-                                "short": short_pct,
-                                "longVolume": item.get("longVolume", 0),
-                                "shortVolume": item.get("shortVolume", 0),
-                                "longPositions": item.get("longPositions", 0),
-                                "shortPositions": item.get("shortPositions", 0),
-                                "change_24h": 0,
-                                "source": "myfxbook",
-                                "timestamp": datetime.utcnow().isoformat()
-                            }
-                    
-                    if positions:
-                        retail_positioning_cache = positions
-                        retail_cache_time = datetime.utcnow()
-                        print(f"[Pulse] ✅ Fetched REAL sentiment for {len(positions)} pairs from Myfxbook API")
-                        return positions
-                    else:
-                        print("[Pulse] ⚠️ No matching symbols in Myfxbook response")
+                        positions[name] = {
+                            "long": long_pct,
+                            "short": short_pct,
+                            "longVolume": item.get("longVolume", 0),
+                            "shortVolume": item.get("shortVolume", 0),
+                            "longPositions": item.get("longPositions", 0),
+                            "shortPositions": item.get("shortPositions", 0),
+                            "change_24h": 0,
+                            "source": "myfxbook",
+                            "timestamp": datetime.utcnow().isoformat()
+                        }
+                
+                if positions:
+                    retail_positioning_cache = positions
+                    retail_cache_time = datetime.utcnow()
+                    print(f"[Pulse] ✅ Fetched REAL sentiment for {len(positions)} pairs from Myfxbook API")
+                    return positions
                 else:
-                    print(f"[Pulse] ❌ Myfxbook API error: {data.get('message')}")
+                    print("[Pulse] ⚠️ No matching symbols in Myfxbook response")
             else:
-                print(f"[Pulse] ❌ Myfxbook API failed: HTTP {response.status_code}")
+                print(f"[Pulse] ❌ Myfxbook API error: {data.get('message')}")
+        else:
+            print(f"[Pulse] ❌ Myfxbook API failed: HTTP {response.status_code}")
                 
     except Exception as e:
         print(f"[Pulse] ❌ Myfxbook API exception: {e}")
@@ -216,89 +219,93 @@ async def fetch_cftc_cot_data() -> Dict[str, dict]:
     print("[Pulse] 📊 Fetching real COT data from CFTC...")
     
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            # CFTC Legacy COT Report (Futures Only)
-            response = await client.get(
-                "https://www.cftc.gov/dea/newcot/deafut.txt",
-                headers={"User-Agent": "Mozilla/5.0"}
-            )
+        # Use pooled HTTP client
+        from shared import get_pooled_client
+        client = await get_pooled_client()
+        
+        # CFTC Legacy COT Report (Futures Only)
+        response = await client.get(
+            "https://www.cftc.gov/dea/newcot/deafut.txt",
+            headers={"User-Agent": "Mozilla/5.0"},
+            timeout=30.0
+        )
+        
+        if response.status_code == 200:
+            lines = response.text.strip().split('\n')
+            result = {}
             
-            if response.status_code == 200:
-                lines = response.text.strip().split('\n')
-                result = {}
+            for line in lines:
+                parts = line.split(',')
+                if len(parts) < 15:
+                    continue
                 
-                for line in lines:
-                    parts = line.split(',')
-                    if len(parts) < 15:
-                        continue
-                    
-                    contract_name = parts[0].strip('"').upper()
-                    
-                    # Only process currency futures
-                    for cftc_name, currency in CFTC_CURRENCIES.items():
-                        if cftc_name in contract_name and "CHICAGO MERCANTILE" in contract_name:
-                            try:
-                                # Legacy COT format columns:
-                                # [7]: Open Interest
-                                # [8]: Non-Commercial Long
-                                # [9]: Non-Commercial Short
-                                # [10]: Non-Commercial Spreading
-                                # [11]: Commercial Long
-                                # [12]: Commercial Short
-                                
-                                open_interest = int(parts[7].strip()) if parts[7].strip().isdigit() else 0
-                                nc_long = int(parts[8].strip()) if parts[8].strip().isdigit() else 0
-                                nc_short = int(parts[9].strip()) if parts[9].strip().isdigit() else 0
-                                comm_long = int(parts[11].strip()) if parts[11].strip().isdigit() else 0
-                                comm_short = int(parts[12].strip()) if parts[12].strip().isdigit() else 0
-                                
-                                # Calculate net positions
-                                nc_net = nc_long - nc_short  # Large Speculators
-                                comm_net = comm_long - comm_short  # Commercials (hedgers)
-                                
-                                # Determine trend based on speculator positioning
-                                if nc_net > 20000:
-                                    trend = "bullish"
-                                elif nc_net < -20000:
-                                    trend = "bearish"
-                                else:
-                                    trend = "mixed"
-                                
-                                result[currency] = {
-                                    "commercials": comm_net,
-                                    "large_specs": nc_net,
-                                    "small_specs": 0,
-                                    "nc_long": nc_long,
-                                    "nc_short": nc_short,
-                                    "comm_long": comm_long,
-                                    "comm_short": comm_short,
-                                    "open_interest": open_interest,
-                                    "trend": trend,
-                                    "source": "cftc",
-                                    "timestamp": datetime.utcnow().isoformat()
-                                }
-                                print(f"[Pulse] ✅ COT {currency}: Specs={nc_net:+,}, Comms={comm_net:+,} → {trend}")
-                            except (ValueError, IndexError) as e:
-                                print(f"[Pulse] Error parsing {currency}: {e}")
-                            break
+                contract_name = parts[0].strip('"').upper()
                 
-                # Add USD (inverse of major currency positions)
-                if result:
-                    eur_specs = result.get("EUR", {}).get("large_specs", 0)
-                    result["USD"] = {
-                        "commercials": 0,
-                        "large_specs": -eur_specs,
-                        "small_specs": 0,
-                        "trend": "bullish" if eur_specs < 0 else "bearish" if eur_specs > 0 else "mixed",
-                        "source": "derived",
-                        "timestamp": datetime.utcnow().isoformat()
-                    }
-                
-                if result:
-                    COT_DATA = result
-                    cot_cache_time = datetime.utcnow()
-                    print(f"[Pulse] ✅ Loaded real COT data for {len(result)} currencies")
-                    return result
+                # Only process currency futures
+                for cftc_name, currency in CFTC_CURRENCIES.items():
+                    if cftc_name in contract_name and "CHICAGO MERCANTILE" in contract_name:
+                        try:
+                            # Legacy COT format columns:
+                            # [7]: Open Interest
+                            # [8]: Non-Commercial Long
+                            # [9]: Non-Commercial Short
+                            # [10]: Non-Commercial Spreading
+                            # [11]: Commercial Long
+                            # [12]: Commercial Short
+                            
+                            open_interest = int(parts[7].strip()) if parts[7].strip().isdigit() else 0
+                            nc_long = int(parts[8].strip()) if parts[8].strip().isdigit() else 0
+                            nc_short = int(parts[9].strip()) if parts[9].strip().isdigit() else 0
+                            comm_long = int(parts[11].strip()) if parts[11].strip().isdigit() else 0
+                            comm_short = int(parts[12].strip()) if parts[12].strip().isdigit() else 0
+                            
+                            # Calculate net positions
+                            nc_net = nc_long - nc_short  # Large Speculators
+                            comm_net = comm_long - comm_short  # Commercials (hedgers)
+                            
+                            # Determine trend based on speculator positioning
+                            if nc_net > 20000:
+                                trend = "bullish"
+                            elif nc_net < -20000:
+                                trend = "bearish"
+                            else:
+                                trend = "mixed"
+                            
+                            result[currency] = {
+                                "commercials": comm_net,
+                                "large_specs": nc_net,
+                                "small_specs": 0,
+                                "nc_long": nc_long,
+                                "nc_short": nc_short,
+                                "comm_long": comm_long,
+                                "comm_short": comm_short,
+                                "open_interest": open_interest,
+                                "trend": trend,
+                                "source": "cftc",
+                                "timestamp": datetime.utcnow().isoformat()
+                            }
+                            print(f"[Pulse] ✅ COT {currency}: Specs={nc_net:+,}, Comms={comm_net:+,} → {trend}")
+                        except (ValueError, IndexError) as e:
+                            print(f"[Pulse] Error parsing {currency}: {e}")
+                        break
+            
+            # Add USD (inverse of major currency positions)
+            if result:
+                eur_specs = result.get("EUR", {}).get("large_specs", 0)
+                result["USD"] = {
+                    "commercials": 0,
+                    "large_specs": -eur_specs,
+                    "small_specs": 0,
+                    "trend": "bullish" if eur_specs < 0 else "bearish" if eur_specs > 0 else "mixed",
+                    "source": "derived",
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+            
+            if result:
+                COT_DATA = result
+                cot_cache_time = datetime.utcnow()
+                print(f"[Pulse] ✅ Loaded real COT data for {len(result)} currencies")
+                return result
                     
     except Exception as e:
         print(f"[Pulse] ❌ Error fetching CFTC COT: {e}")
@@ -663,12 +670,15 @@ async def fetch_all_news() -> Dict[str, dict]:
     result = {sym: {"headlines": [], "narrative": "", "tone": "neutral", "tone_score": 50, "sources": []} for sym in SYMBOLS}
     
     try:
-        async with httpx.AsyncClient(timeout=20.0) as client:
-            # Fetch from all feeds
-            all_items = []
-            for name, url in NEWS_FEEDS:
-                items = await fetch_news_from_feed(client, name, url)
-                all_items.extend(items)
+        # Use pooled HTTP client
+        from shared import get_pooled_client
+        client = await get_pooled_client()
+        
+        # Fetch from all feeds
+        all_items = []
+        for name, url in NEWS_FEEDS:
+            items = await fetch_news_from_feed(client, name, url)
+            all_items.extend(items)
             
             print(f"[Pulse] 📰 Total: {len(all_items)} headlines from {len(NEWS_FEEDS)} sources")
             

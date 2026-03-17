@@ -117,7 +117,7 @@ agent_status: Dict[str, dict] = {}
 
 
 async def fetch_agent_data(agent: str, endpoint: str, timeout: float = 5.0) -> Optional[dict]:
-    """Fetch data from an agent."""
+    """Fetch data from an agent using pooled HTTP client."""
     url = AGENT_URLS.get(agent)
     if not url:
         return None
@@ -125,16 +125,17 @@ async def fetch_agent_data(agent: str, endpoint: str, timeout: float = 5.0) -> O
     import time
     start_time = time.time()
     try:
-        async with httpx.AsyncClient() as client:
-            r = await client.get(f"{url}{endpoint}", timeout=timeout)
-            latency = (time.time() - start_time) * 1000
-            if r.status_code == 200:
-                if MONITORING_AVAILABLE:
-                    log_message("nexus", agent, endpoint, "success", latency)
-                return r.json()
-            else:
-                if MONITORING_AVAILABLE:
-                    log_message("nexus", agent, endpoint, "error", latency)
+        # Use pooled client for connection reuse
+        from shared import pooled_get
+        result = await pooled_get(f"{url}{endpoint}", timeout=timeout)
+        latency = (time.time() - start_time) * 1000
+        if result is not None:
+            if MONITORING_AVAILABLE:
+                log_message("nexus", agent, endpoint, "success", latency)
+            return result
+        else:
+            if MONITORING_AVAILABLE:
+                log_message("nexus", agent, endpoint, "error", latency)
     except Exception as e:
         latency = (time.time() - start_time) * 1000
         if MONITORING_AVAILABLE:
@@ -144,7 +145,7 @@ async def fetch_agent_data(agent: str, endpoint: str, timeout: float = 5.0) -> O
 
 
 async def post_to_agent(agent: str, endpoint: str, data: dict, timeout: float = 10.0) -> Optional[dict]:
-    """Post data to an agent."""
+    """Post data to an agent using pooled HTTP client."""
     url = AGENT_URLS.get(agent)
     if not url:
         return None
@@ -152,16 +153,17 @@ async def post_to_agent(agent: str, endpoint: str, data: dict, timeout: float = 
     import time
     start_time = time.time()
     try:
-        async with httpx.AsyncClient() as client:
-            r = await client.post(f"{url}{endpoint}", json=data, timeout=timeout)
-            latency = (time.time() - start_time) * 1000
-            if r.status_code == 200:
-                if MONITORING_AVAILABLE:
-                    log_message("nexus", agent, f"POST {endpoint}", "success", latency)
-                return r.json()
-            else:
-                if MONITORING_AVAILABLE:
-                    log_message("nexus", agent, f"POST {endpoint}", "error", latency)
+        # Use pooled client for connection reuse
+        from shared import pooled_post
+        result = await pooled_post(f"{url}{endpoint}", data, timeout=timeout)
+        latency = (time.time() - start_time) * 1000
+        if result is not None:
+            if MONITORING_AVAILABLE:
+                log_message("nexus", agent, f"POST {endpoint}", "success", latency)
+            return result
+        else:
+            if MONITORING_AVAILABLE:
+                log_message("nexus", agent, f"POST {endpoint}", "error", latency)
     except Exception as e:
         latency = (time.time() - start_time) * 1000
         if MONITORING_AVAILABLE:
@@ -735,24 +737,27 @@ async def call_claude(prompt: str, context: str = "") -> str:
     soul = (WORKSPACE / "SOUL.md").read_text() if (WORKSPACE / "SOUL.md").exists() else ""
     
     try:
-        async with httpx.AsyncClient() as client:
-            r = await client.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={
-                    "x-api-key": ANTHROPIC_API_KEY,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json"
-                },
-                json={
-                    "model": "claude-sonnet-4-20250514",
-                    "max_tokens": 2048,
-                    "system": soul,
-                    "messages": [{"role": "user", "content": f"{context}\n\n{prompt}" if context else prompt}]
-                },
-                timeout=60.0
-            )
-            if r.status_code == 200:
-                return r.json()["content"][0]["text"]
+        # Use pooled HTTP client for connection reuse
+        from shared import get_pooled_client
+        client = await get_pooled_client()
+        
+        r = await client.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json"
+            },
+            json={
+                "model": "claude-sonnet-4-20250514",
+                "max_tokens": 2048,
+                "system": soul,
+                "messages": [{"role": "user", "content": f"{context}\n\n{prompt}" if context else prompt}]
+            },
+            timeout=60.0
+        )
+        if r.status_code == 200:
+            return r.json()["content"][0]["text"]
     except Exception as e:
         print(f"Claude API error: {e}")
     
@@ -760,8 +765,12 @@ async def call_claude(prompt: str, context: str = "") -> str:
 
 
 async def fetch_all_agent_status():
-    """Fetch status from all agents."""
+    """Fetch status from all agents with in-memory caching."""
     global agent_status
+    
+    # Use in-memory cache for agent status (30 second TTL)
+    from shared import InMemoryCache
+    cache = InMemoryCache(default_ttl=30)
     
     agents = [
         ("curator", "data-agent"),
@@ -781,20 +790,31 @@ async def fetch_all_agent_status():
     ]
     
     for agent_key, _ in agents:
+        # Check cache first
+        cache_key = f"agent_status:{agent_key}"
+        cached = cache.get(cache_key)
+        if cached:
+            agent_status[agent_key] = cached
+            continue
+        
         data = await fetch_agent_data(agent_key, "/api/status")
         if data:
-            agent_status[agent_key] = {
+            status_entry = {
                 "status": "online",
                 "name": data.get("name", agent_key),
                 "data": data,
                 "last_check": datetime.utcnow().isoformat(),
             }
+            agent_status[agent_key] = status_entry
+            cache.set(cache_key, status_entry)
         else:
-            agent_status[agent_key] = {
+            status_entry = {
                 "status": "offline",
                 "name": agent_key,
                 "last_check": datetime.utcnow().isoformat(),
             }
+            agent_status[agent_key] = status_entry
+            cache.set(cache_key, status_entry, ttl=10)  # Shorter TTL for offline status
 
 
 @app.on_event("startup")
@@ -1059,155 +1079,157 @@ async def get_pair_analysis(symbol: str):
         "nexus_commentary": "",
     }
     
-    # Fetch from all agents in parallel
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        # Curator - Market Data
-        try:
-            r = await client.get(f"{AGENT_URLS['curator']}/api/market/{symbol}")
-            if r.status_code == 200:
-                analysis["agents"]["curator"] = {
-                    "name": "Curator",
-                    "data": r.json(),
-                    "summary": f"Price: {r.json().get('price', 0):.5f}, Spread: {r.json().get('spread', 0):.1f} pips"
-                }
-        except: pass
-        
-        # Sentinel - Event Risk
-        try:
-            r = await client.get(f"{AGENT_URLS['sentinel']}/api/risk/{symbol}")
-            if r.status_code == 200:
-                data = r.json()
-                analysis["agents"]["sentinel"] = {
-                    "name": "Sentinel",
-                    "data": data,
-                    "summary": f"Event Risk: {data.get('risk_score', 0)}/100, Upcoming: {data.get('upcoming_events', 0)} events"
-                }
-        except: pass
-        
-        # Oracle - Macro (use /api/pair/{pair})
-        try:
-            r = await client.get(f"{AGENT_URLS['oracle']}/api/pair/{symbol}")
-            if r.status_code == 200:
-                data = r.json()
-                bias = data.get('relative_bias', 'neutral')
-                conf = data.get('confidence', 0)
-                diff = data.get('score_difference', 0)
-                analysis["agents"]["oracle"] = {
-                    "name": "Oracle",
-                    "data": data,
-                    "summary": f"Macro Bias: {bias.upper()}, Confidence: {conf}%, Score Diff: {diff:+.1f}"
-                }
-        except: pass
-        
-        # Atlas Jr. - Technical (use /api/analysis/{symbol})
-        try:
-            r = await client.get(f"{AGENT_URLS['atlas']}/api/analysis/{symbol}")
-            if r.status_code == 200:
-                data = r.json()
-                analysis["agents"]["atlas"] = {
-                    "name": "Atlas Jr.",
-                    "data": data,
-                    "summary": f"Bias: {data.get('directional_lean', 'neutral').upper()}, Grade: {data.get('trend_grade', '?')}, Setup: {data.get('setup_type', 'none')}, Alignment: {data.get('mtf_alignment', 'N/A')}"
-                }
-        except: pass
-        
-        # Architect - Structure
-        try:
-            r = await client.get(f"{AGENT_URLS['architect']}/api/structure/{symbol}")
-            if r.status_code == 200:
-                data = r.json()
-                struct_bias = data.get('structural_bias', data.get('bias', 'neutral'))
-                analysis["agents"]["architect"] = {
-                    "name": "Architect",
-                    "data": data,
-                    "summary": f"Structure: {struct_bias.upper()}, Bias: {struct_bias}, Confidence: {data.get('confidence', 0)}%"
-                }
-        except: pass
-        
-        # Pulse - Sentiment
-        try:
-            r = await client.get(f"{AGENT_URLS['pulse']}/api/sentiment/{symbol}")
-            if r.status_code == 200:
-                data = r.json()
-                analysis["agents"]["pulse"] = {
-                    "name": "Pulse",
-                    "data": data,
-                    "summary": f"Retail: {data.get('retail_positioning', {}).get('long_pct', 50)}% Long, Status: {data.get('classification', 'neutral').upper()}"
-                }
-        except: pass
-        
-        # Compass - Regime
-        try:
-            r = await client.get(f"{AGENT_URLS['compass']}/api/regime/{symbol}")
-            if r.status_code == 200:
-                data = r.json()
-                regime = data.get('primary_regime', data.get('regime', 'unknown'))
-                analysis["agents"]["compass"] = {
-                    "name": "Compass",
-                    "data": data,
-                    "summary": f"Regime: {regime.upper()}, Confidence: {data.get('confidence', 0)}%, Risk Mult: {data.get('risk_multiplier', 1):.2f}x"
-                }
-        except: pass
-        
-        # Tactician - Strategy (show detailed checks)
-        try:
-            r = await client.get(f"{AGENT_URLS['tactician']}/api/strategy/{symbol}")
-            if r.status_code == 200:
-                data = r.json()
-                selected = data.get('selected_strategy', {})
-                if isinstance(selected, dict):
-                    strategy_name = selected.get('name', 'None')
-                    strategy_id = selected.get('strategy_id', 'UNKNOWN')
-                    strategy_score = selected.get('score', 0)
-                    qualified = '✅' if selected.get('qualified') else '❌'
-                    
-                    # Build checks summary
-                    checks = selected.get('checks', [])
-                    checks_summary = []
-                    for c in checks:
-                        icon = '✅' if c.get('passed') else '❌'
-                        checks_summary.append(f"{icon} {c.get('check', '?')}: {c.get('message', '')}")
-                    checks_str = " | ".join(checks_summary) if checks_summary else "No checks"
-                    
-                    summary = f"📋 {strategy_name} ({strategy_id}) — Score: {strategy_score}%, Qualified: {qualified}\n\nChecks: {checks_str}"
-                else:
-                    summary = f"Strategy: {selected or 'None'}"
+    # Use pooled HTTP client for all agent fetches
+    from shared import get_pooled_client
+    client = await get_pooled_client()
+    
+    # Curator - Market Data
+    try:
+        r = await client.get(f"{AGENT_URLS['curator']}/api/market/{symbol}", timeout=10.0)
+        if r.status_code == 200:
+            analysis["agents"]["curator"] = {
+                "name": "Curator",
+                "data": r.json(),
+                "summary": f"Price: {r.json().get('price', 0):.5f}, Spread: {r.json().get('spread', 0):.1f} pips"
+            }
+    except: pass
+    
+    # Sentinel - Event Risk
+    try:
+        r = await client.get(f"{AGENT_URLS['sentinel']}/api/risk/{symbol}", timeout=10.0)
+        if r.status_code == 200:
+            data = r.json()
+            analysis["agents"]["sentinel"] = {
+                "name": "Sentinel",
+                "data": data,
+                "summary": f"Event Risk: {data.get('risk_score', 0)}/100, Upcoming: {data.get('upcoming_events', 0)} events"
+            }
+    except: pass
+    
+    # Oracle - Macro (use /api/pair/{pair})
+    try:
+        r = await client.get(f"{AGENT_URLS['oracle']}/api/pair/{symbol}", timeout=10.0)
+        if r.status_code == 200:
+            data = r.json()
+            bias = data.get('relative_bias', 'neutral')
+            conf = data.get('confidence', 0)
+            diff = data.get('score_difference', 0)
+            analysis["agents"]["oracle"] = {
+                "name": "Oracle",
+                "data": data,
+                "summary": f"Macro Bias: {bias.upper()}, Confidence: {conf}%, Score Diff: {diff:+.1f}"
+            }
+    except: pass
+    
+    # Atlas Jr. - Technical (use /api/analysis/{symbol})
+    try:
+        r = await client.get(f"{AGENT_URLS['atlas']}/api/analysis/{symbol}", timeout=10.0)
+        if r.status_code == 200:
+            data = r.json()
+            analysis["agents"]["atlas"] = {
+                "name": "Atlas Jr.",
+                "data": data,
+                "summary": f"Bias: {data.get('directional_lean', 'neutral').upper()}, Grade: {data.get('trend_grade', '?')}, Setup: {data.get('setup_type', 'none')}, Alignment: {data.get('mtf_alignment', 'N/A')}"
+            }
+    except: pass
+    
+    # Architect - Structure
+    try:
+        r = await client.get(f"{AGENT_URLS['architect']}/api/structure/{symbol}", timeout=10.0)
+        if r.status_code == 200:
+            data = r.json()
+            struct_bias = data.get('structural_bias', data.get('bias', 'neutral'))
+            analysis["agents"]["architect"] = {
+                "name": "Architect",
+                "data": data,
+                "summary": f"Structure: {struct_bias.upper()}, Bias: {struct_bias}, Confidence: {data.get('confidence', 0)}%"
+            }
+    except: pass
+    
+    # Pulse - Sentiment
+    try:
+        r = await client.get(f"{AGENT_URLS['pulse']}/api/sentiment/{symbol}", timeout=10.0)
+        if r.status_code == 200:
+            data = r.json()
+            analysis["agents"]["pulse"] = {
+                "name": "Pulse",
+                "data": data,
+                "summary": f"Retail: {data.get('retail_positioning', {}).get('long_pct', 50)}% Long, Status: {data.get('classification', 'neutral').upper()}"
+            }
+    except: pass
+    
+    # Compass - Regime
+    try:
+        r = await client.get(f"{AGENT_URLS['compass']}/api/regime/{symbol}", timeout=10.0)
+        if r.status_code == 200:
+            data = r.json()
+            regime = data.get('primary_regime', data.get('regime', 'unknown'))
+            analysis["agents"]["compass"] = {
+                "name": "Compass",
+                "data": data,
+                "summary": f"Regime: {regime.upper()}, Confidence: {data.get('confidence', 0)}%, Risk Mult: {data.get('risk_multiplier', 1):.2f}x"
+            }
+    except: pass
+    
+    # Tactician - Strategy (show detailed checks)
+    try:
+        r = await client.get(f"{AGENT_URLS['tactician']}/api/strategy/{symbol}", timeout=10.0)
+        if r.status_code == 200:
+            data = r.json()
+            selected = data.get('selected_strategy', {})
+            if isinstance(selected, dict):
+                strategy_name = selected.get('name', 'None')
+                strategy_id = selected.get('strategy_id', 'UNKNOWN')
+                strategy_score = selected.get('score', 0)
+                qualified = '✅' if selected.get('qualified') else '❌'
                 
-                analysis["agents"]["tactician"] = {
-                    "name": "Tactician",
-                    "data": data,
-                    "summary": summary
-                }
-        except: pass
-        
-        # Guardian - Risk (use /api/status)
-        try:
-            r = await client.get(f"{AGENT_URLS['guardian']}/api/status")
-            if r.status_code == 200:
-                data = r.json()
-                mode = data.get('risk_mode', data.get('mode', 'unknown')).upper()
-                mode_icon = '🟢' if mode == 'NORMAL' else '🟡' if mode == 'DEFENSIVE' else '🔴'
-                dd = data.get('system_drawdown', data.get('drawdown', 0))
-                pos = data.get('open_positions', 0)
-                max_pos = data.get('max_positions', 5)
-                analysis["agents"]["guardian"] = {
-                    "name": "Guardian",
-                    "data": data,
-                    "summary": f"{mode_icon} {mode} Mode, Drawdown: {dd:.1f}%, Positions: {pos}/{max_pos}"
-                }
-        except: pass
-        
-        # Balancer - Portfolio
-        try:
-            r = await client.get(f"{AGENT_URLS['balancer']}/api/exposure/{symbol}")
-            if r.status_code == 200:
-                data = r.json()
-                analysis["agents"]["balancer"] = {
-                    "name": "Balancer",
-                    "data": data,
-                    "summary": f"Current Exposure: {data.get('exposure', 0):.2f}%, Recommendation: {data.get('recommendation', 'none')}"
-                }
-        except: pass
+                # Build checks summary
+                checks = selected.get('checks', [])
+                checks_summary = []
+                for c in checks:
+                    icon = '✅' if c.get('passed') else '❌'
+                    checks_summary.append(f"{icon} {c.get('check', '?')}: {c.get('message', '')}")
+                checks_str = " | ".join(checks_summary) if checks_summary else "No checks"
+                
+                summary = f"📋 {strategy_name} ({strategy_id}) — Score: {strategy_score}%, Qualified: {qualified}\n\nChecks: {checks_str}"
+            else:
+                summary = f"Strategy: {selected or 'None'}"
+            
+            analysis["agents"]["tactician"] = {
+                "name": "Tactician",
+                "data": data,
+                "summary": summary
+            }
+    except: pass
+    
+    # Guardian - Risk (use /api/status)
+    try:
+        r = await client.get(f"{AGENT_URLS['guardian']}/api/status", timeout=10.0)
+        if r.status_code == 200:
+            data = r.json()
+            mode = data.get('risk_mode', data.get('mode', 'unknown')).upper()
+            mode_icon = '🟢' if mode == 'NORMAL' else '🟡' if mode == 'DEFENSIVE' else '🔴'
+            dd = data.get('system_drawdown', data.get('drawdown', 0))
+            pos = data.get('open_positions', 0)
+            max_pos = data.get('max_positions', 5)
+            analysis["agents"]["guardian"] = {
+                "name": "Guardian",
+                "data": data,
+                "summary": f"{mode_icon} {mode} Mode, Drawdown: {dd:.1f}%, Positions: {pos}/{max_pos}"
+            }
+    except: pass
+    
+    # Balancer - Portfolio
+    try:
+        r = await client.get(f"{AGENT_URLS['balancer']}/api/exposure/{symbol}", timeout=10.0)
+        if r.status_code == 200:
+            data = r.json()
+            analysis["agents"]["balancer"] = {
+                "name": "Balancer",
+                "data": data,
+                "summary": f"Current Exposure: {data.get('exposure', 0):.2f}%, Recommendation: {data.get('recommendation', 'none')}"
+            }
+    except: pass
     
     # Calculate confluence - fetch actual strategy from Tactician
     try:
@@ -1598,6 +1620,25 @@ async def shutdown_event():
     """Stop workflow scheduler on shutdown."""
     if WORKFLOWS_AVAILABLE:
         await scheduler.stop()
+
+
+@app.get("/api/performance")
+async def get_performance_metrics():
+    """Get HTTP client pool and cache performance metrics."""
+    from shared import get_metrics
+    metrics = get_metrics()
+    return {
+        "http_pool": {
+            "total_requests": metrics.http_requests,
+            "cache_hits": metrics.cache_hits,
+            "cache_misses": metrics.cache_misses,
+            "cache_hit_rate": f"{(metrics.cache_hits / max(metrics.cache_hits + metrics.cache_misses, 1)) * 100:.1f}%",
+            "avg_latency_ms": f"{metrics.avg_latency:.2f}",
+            "total_latency_ms": f"{metrics.total_latency:.2f}",
+        },
+        "status": "pooled_http_client_active",
+        "optimization": "connection_reuse_enabled",
+    }
 
 
 if __name__ == "__main__":

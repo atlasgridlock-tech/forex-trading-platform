@@ -134,8 +134,37 @@ curl -X POST http://localhost:3020/api/evaluate \
 ```
 
 ## Remaining Work
-1. **P3:** Performance optimization (optional)
-2. **P3:** Extended documentation (optional)
+1. **P3:** Extended documentation (optional)
+2. Connect Real MT5 Bridge (after user readiness)
+
+## Performance Optimization ✅ (December 2025)
+
+### Changes Made
+- **Shared HTTP Client Pool**: Created `/app/agents/shared/performance.py` with:
+  - `HTTPClientPool`: Singleton class managing a shared `httpx.AsyncClient` with connection pooling
+  - `pooled_get()` / `pooled_post()`: Drop-in replacements for creating new clients per request
+  - `batch_fetch()`: Concurrent request execution for parallel data fetching
+  
+- **In-Memory Caching**: Implemented `InMemoryCache` class with:
+  - TTL-based expiration
+  - `@cached` decorator for function results
+  - `cached_fetch()` for URL response caching
+  
+- **Agent Integration**: Updated all 14 agents to use pooled HTTP client:
+  - Replaced `async with httpx.AsyncClient()` patterns with `get_pooled_client()`
+  - Reduced connection overhead by reusing persistent connections
+  - Added caching for agent status in orchestrator (30s TTL)
+
+- **Metrics Endpoint**: Added `GET /api/performance` to orchestrator for monitoring:
+  - HTTP request counts
+  - Cache hit/miss rates
+  - Average latency tracking
+
+### Performance Benefits
+- **Connection Reuse**: Single HTTP client pool serves all agents
+- **Reduced Latency**: No TCP handshake per request
+- **Memory Efficiency**: Shared client resources
+- **Cache Layer**: In-memory caching reduces redundant API calls
 
 ## Position Lifecycle Management ✅
 

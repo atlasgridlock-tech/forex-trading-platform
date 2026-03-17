@@ -514,48 +514,42 @@ async def process_and_validate():
 
 
 async def send_alert(level: str, message: str):
-    """Send alert to Orchestrator."""
-    try:
-        async with httpx.AsyncClient() as client:
-            await client.post(
-                f"{ORCHESTRATOR_URL}/api/ingest",
-                json={
-                    "agent_id": "data",
-                    "agent_name": AGENT_NAME,
-                    "output_type": "alert",
-                    "timestamp": datetime.utcnow().isoformat(),
-                    "data": {"level": level, "message": message},
-                },
-                timeout=5.0
-            )
-    except:
-        pass
+    """Send alert to Orchestrator using pooled client."""
+    from shared import pooled_post
+    await pooled_post(
+        f"{ORCHESTRATOR_URL}/api/ingest",
+        {
+            "agent_id": "data",
+            "agent_name": AGENT_NAME,
+            "output_type": "alert",
+            "timestamp": datetime.utcnow().isoformat(),
+            "data": {"level": level, "message": message},
+        },
+        timeout=5.0
+    )
 
 
 async def send_snapshot(symbol: str):
-    """Send symbol snapshot to Orchestrator."""
+    """Send symbol snapshot to Orchestrator using pooled client."""
     quality = quality_scores.get(symbol, {})
     
-    try:
-        async with httpx.AsyncClient() as client:
-            await client.post(
-                f"{ORCHESTRATOR_URL}/api/ingest",
-                json={
-                    "agent_id": "data",
-                    "agent_name": AGENT_NAME,
-                    "output_type": "analysis",
-                    "timestamp": datetime.utcnow().isoformat(),
-                    "data": {
-                        "symbol": symbol,
-                        "quality_score": quality.get("overall", 0),
-                        "tradeable": quality.get("tradeable", False),
-                        "status": quality.get("status", "unknown"),
-                    },
-                },
-                timeout=5.0
-            )
-    except:
-        pass
+    from shared import pooled_post
+    await pooled_post(
+        f"{ORCHESTRATOR_URL}/api/ingest",
+        {
+            "agent_id": "data",
+            "agent_name": AGENT_NAME,
+            "output_type": "analysis",
+            "timestamp": datetime.utcnow().isoformat(),
+            "data": {
+                "symbol": symbol,
+                "quality_score": quality.get("overall", 0),
+                "tradeable": quality.get("tradeable", False),
+                "status": quality.get("status", "unknown"),
+            },
+        },
+        timeout=5.0
+    )
 
 
 async def background_loop():
