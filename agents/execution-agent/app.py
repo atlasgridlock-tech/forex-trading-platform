@@ -988,9 +988,15 @@ async def close_position(ticket: int):
     return result
 
 
+class PartialCloseRequest(BaseModel):
+    ticket: int
+    close_percent: float
+
 @app.post("/api/partial-close")
-async def partial_close_position(ticket: int, close_percent: float):
+async def partial_close_position(request: PartialCloseRequest):
     """Partially close a position via MT5 bridge (for scaling out)."""
+    ticket = request.ticket
+    close_percent = request.close_percent
     if execution_mode != ExecutionMode.GUARDED_LIVE:
         return {"status": "ERROR", "error": "Partial close only available in guarded_live mode"}
     
@@ -1020,9 +1026,17 @@ async def partial_close_position(ticket: int, close_percent: float):
     return result
 
 
+class ModifySLRequest(BaseModel):
+    ticket: int
+    new_sl: float
+    new_tp: float = 0
+
 @app.post("/api/modify-sl")
-async def modify_stop_loss(ticket: int, new_sl: float, new_tp: float = 0):
+async def modify_stop_loss(request: ModifySLRequest):
     """Modify stop loss (and optionally TP) for a position."""
+    ticket = request.ticket
+    new_sl = request.new_sl
+    new_tp = request.new_tp
     if execution_mode != ExecutionMode.GUARDED_LIVE:
         return {"status": "ERROR", "error": "Modify only available in guarded_live mode"}
     
