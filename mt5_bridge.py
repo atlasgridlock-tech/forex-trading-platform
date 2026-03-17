@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """
-MT5 File Bridge v4.0
+MT5 File Bridge v4.1
 Multi-timeframe candle data + ticks from MT5 to trading platform.
 Timeframes: M30 (primary), H1, H4, D1 (per spec)
+
+Updated for new data-agent endpoints.
 """
 
 import csv
 import time
 import requests
+import os
 from pathlib import Path
 from datetime import datetime
 from collections import defaultdict
@@ -17,10 +20,10 @@ MT5_FILES_DIR = Path.home() / "Library/Application Support/net.metaquotes.wine.m
 TICK_FILE = MT5_FILES_DIR / "market_data.csv"
 CANDLE_FILE = MT5_FILES_DIR / "candle_data.csv"
 
-# API endpoints
-API_BASE = "http://localhost:8000"
-TICK_URL = f"{API_BASE}/api/market-data/update"
-CANDLE_URL = f"{API_BASE}/api/candles/update"
+# API endpoints - connect to data-agent (Curator)
+DATA_AGENT_URL = os.getenv("CURATOR_URL", "http://localhost:3021")
+TICK_URL = f"{DATA_AGENT_URL}/api/market-data/update"
+CANDLE_URL = f"{DATA_AGENT_URL}/api/candles/update"
 
 def read_tick_data():
     """Read tick data from MT5's CSV file."""
@@ -99,11 +102,11 @@ def send_candles(data):
 
 def main():
     print("=" * 60)
-    print("MT5 FILE BRIDGE v4.0 (MTF: M30/H1/H4/D1)")
+    print("MT5 FILE BRIDGE v4.1 (MTF: M30/H1/H4/D1)")
     print("=" * 60)
     print(f"Tick file:   {TICK_FILE}")
     print(f"Candle file: {CANDLE_FILE}")
-    print(f"API Base:    {API_BASE}")
+    print(f"Data Agent:  {DATA_AGENT_URL}")
     print("-" * 60)
     
     if not MT5_FILES_DIR.exists():

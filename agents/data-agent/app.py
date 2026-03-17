@@ -775,6 +775,147 @@ Last Ingest: {last_ingest.isoformat() if last_ingest else 'Never'}
     return {"response": await call_claude(request.message, context)}
 
 
+# === Live Data Ingestion Endpoints (MT5 Bridge) ===
+
+class TickData(BaseModel):
+    symbols: Dict[str, dict]
+
+class CandleData(BaseModel):
+    candles: Dict[str, Dict[str, List[dict]]]  # symbol -> timeframe -> candles
+
+# In-memory live market data
+live_market_data: Dict[str, dict] = {}
+live_candle_data: Dict[str, Dict[str, List[dict]]] = defaultdict(lambda: defaultdict(list))
+last_tick_update: Optional[datetime] = None
+last_candle_update: Optional[datetime] = None
+
+
+@app.post("/api/market-data/update")
+async def update_market_data(data: TickData):
+    """Receive live tick data from MT5 bridge."""
+    global live_market_data, last_tick_update, last_ingest
+    
+    count = 0
+    for symbol, tick in data.symbols.items():
+        # Normalize symbol (strip suffix)
+        clean_symbol = internal_symbol(symbol)
+        
+        live_market_data[clean_symbol] = {
+            "symbol": clean_symbol,
+            "bid": tick.get("bid", 0),
+            "ask": tick.get("ask", 0),
+            "price": (tick.get("bid", 0) + tick.get("ask", 0)) / 2,
+            "spread": tick.get("spread", 0),
+            "volume": tick.get("volume", 0),
+            "time": tick.get("time"),
+            "updated": datetime.utcnow().isoformat(),
+        }
+        
+        # Update spread history
+        spread = tick.get("spread", 0)
+        spread_history[clean_symbol].append(spread)
+        if len(spread_history[clean_symbol]) > 100:
+            spread_history[clean_symbol] = spread_history[clean_symbol][-100:]
+        
+        count += 1
+    
+    last_tick_update = datetime.utcnow()
+    last_ingest = last_tick_update
+    
+    # Recalculate quality scores
+    await recalculate_quality()
+    
+    logger.info(f"[Curator] Received {count} ticks from MT5 bridge")
+    return {"status": "ok", "symbols_updated": count, "timestamp": last_tick_update.isoformat()}
+
+
+@app.post("/api/candles/update")
+async def update_candles(data: CandleData):
+    """Receive live candle data from MT5 bridge."""
+    global live_candle_data, last_candle_update, last_ingest
+    
+    total_candles = 0
+    symbols_updated = []
+    
+    for symbol, timeframes in data.candles.items():
+        clean_symbol = internal_symbol(symbol)
+        symbols_updated.append(clean_symbol)
+        
+        for tf, candles in timeframes.items():
+            # Store candles (keep last 200 per timeframe)
+            existing = live_candle_data[clean_symbol][tf]
+            
+            for candle in candles:
+                # Add to cache, avoiding duplicates by time
+                candle_time = candle.get("time")
+                if not any(c.get("time") == candle_time for c in existing):
+                    existing.append(candle)
+                    total_candles += 1
+            
+            # Sort by time and keep latest 200
+            existing.sort(key=lambda c: c.get("time", 0))
+            live_candle_data[clean_symbol][tf] = existing[-200:]
+            
+            # Also update data_cache for compatibility with existing code
+            if clean_symbol not in data_cache:
+                data_cache[clean_symbol] = {}
+            data_cache[clean_symbol][tf] = {
+                "candles": live_candle_data[clean_symbol][tf],
+                "updated": datetime.utcnow().isoformat(),
+            }
+    
+    last_candle_update = datetime.utcnow()
+    last_ingest = last_candle_update
+    
+    logger.info(f"[Curator] Received {total_candles} candles for {len(symbols_updated)} symbols from MT5 bridge")
+    return {
+        "status": "ok", 
+        "candles_received": total_candles, 
+        "symbols": symbols_updated,
+        "timestamp": last_candle_update.isoformat()
+    }
+
+
+async def recalculate_quality():
+    """Recalculate quality scores after receiving new data."""
+    global quality_scores
+    
+    for symbol in live_market_data:
+        data = live_market_data.get(symbol, {})
+        spread = data.get("spread", 0)
+        has_candles = symbol in live_candle_data and len(live_candle_data[symbol]) > 0
+        
+        # Quality based on spread, freshness, and data availability
+        spread_score = max(0, 1 - (spread / 5))  # 5 pip spread = 0 score
+        freshness_score = 1.0 if last_tick_update and (datetime.utcnow() - last_tick_update).seconds < 60 else 0.5
+        candle_score = 0.8 if has_candles else 0.3
+        
+        overall = (spread_score * 0.4 + freshness_score * 0.3 + candle_score * 0.3)
+        
+        quality_scores[symbol] = {
+            "overall": round(overall, 3),
+            "spread_score": round(spread_score, 3),
+            "freshness_score": round(freshness_score, 3),
+            "candle_score": round(candle_score, 3),
+            "tradeable": overall >= QUALITY_THRESHOLD,
+            "updated": datetime.utcnow().isoformat(),
+        }
+
+
+@app.get("/api/live/status")
+async def get_live_status():
+    """Get live data feed status."""
+    return {
+        "live_feed_active": last_tick_update is not None and (datetime.utcnow() - last_tick_update).seconds < 120,
+        "last_tick_update": last_tick_update.isoformat() if last_tick_update else None,
+        "last_candle_update": last_candle_update.isoformat() if last_candle_update else None,
+        "symbols_with_ticks": list(live_market_data.keys()),
+        "symbols_with_candles": list(live_candle_data.keys()),
+        "tick_count": len(live_market_data),
+        "session": get_current_session(),
+    }
+
+
 # === API Endpoints (Outputs) ===
 
 @app.get("/api/status")
@@ -941,8 +1082,16 @@ async def get_tradeable_symbols():
 
 @app.get("/api/market")
 async def get_market_data():
-    """Get current market prices for all symbols."""
+    """Get current market prices for all symbols. Prefers live data over file data."""
     market = {}
+    
+    # First, use live data if available
+    if live_market_data:
+        for symbol, data in live_market_data.items():
+            if symbol in SYMBOLS:
+                market[symbol] = data
+    
+    # Fall back to file data for symbols not in live feed
     try:
         if MARKET_FILE.exists():
             with open(MARKET_FILE, 'r', encoding='utf-8', errors='ignore') as f:
@@ -952,7 +1101,7 @@ async def get_market_data():
                     if len(parts) >= 4:
                         raw_symbol = parts[0].strip()
                         symbol = internal_symbol(raw_symbol)
-                        if symbol in SYMBOLS:
+                        if symbol in SYMBOLS and symbol not in market:  # Don't override live data
                             bid = float(parts[1])
                             ask = float(parts[2])
                             # Spread is in column 3 (index 3), column 4 is Point

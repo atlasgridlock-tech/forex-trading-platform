@@ -71,7 +71,39 @@ User requested to analyze, debug, and fix a multi-agent forex trading platform. 
 - ✅ Paper trade execution working
 - ✅ Risk evaluation working (Guardian)
 - ✅ Monitoring dashboard live
-- ⚠️ Using mock MT5 data (real MT5 bridge not connected)
+- ✅ **Live data feed connected** (simulated or MT5 bridge)
+- ✅ Quality scores based on real-time spread data
+
+## MT5 Bridge Integration
+
+### Data Flow
+```
+MT5 (on Mac) → MT5 Bridge Script → Data Agent (Curator) → All Agents
+```
+
+### Endpoints Added to Data Agent
+- `POST /api/market-data/update` - Receive tick data
+- `POST /api/candles/update` - Receive candle data
+- `GET /api/live/status` - Check live feed status
+
+### Running the Bridge
+
+**Option 1: Simulated Feed (for testing)**
+```bash
+python3 /app/agents/simulated_feed.py
+```
+
+**Option 2: Real MT5 Bridge (on your Mac)**
+```bash
+# Set the data agent URL
+export CURATOR_URL=http://<server-ip>:3021
+python3 /app/mt5_bridge.py
+```
+
+### MT5 EA Requirements
+The MT5 Expert Advisor should export data to these files:
+- `~/Library/Application Support/.../Common/Files/market_data.csv` - Tick data
+- `~/Library/Application Support/.../Common/Files/candle_data.csv` - Candle data
 
 ## Environment Setup
 ```bash
@@ -102,10 +134,10 @@ curl -X POST http://localhost:3020/api/evaluate \
 ```
 
 ## Remaining Work
-1. **P0:** Connect to real MT5 bridge for live data
-2. **P1:** Code refactoring for cleaner agent isolation
-3. **P2:** Documentation updates
-4. **P3:** Analytics agent integration
+1. **P1:** Code refactoring for cleaner agent isolation
+2. **P2:** Documentation updates
+3. **P2:** Analytics agent full integration
+4. **P3:** Position lifecycle management (partial TPs, trailing stops)
 
 ## Test Results Summary
 - **Trade Evaluation:** Working - correctly rejects trades with insufficient confluence
