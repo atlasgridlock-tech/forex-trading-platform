@@ -1,0 +1,23 @@
+# Forex Trading Platform - Python Dependencies
+
+# Core Framework
+fastapi>=0.100.0
+uvicorn>=0.23.0
+pydantic>=2.0.0
+
+# HTTP Client
+httpx>=0.24.0
+h2>=4.0.0
+
+# Database & Cache
+psycopg2-binary>=2.9.0
+redis>=4.5.0
+
+# AI & Analysis
+anthropic>=0.18.0
+numpy>=1.24.0
+pandas>=2.0.0
+
+# Utilities
+python-dotenv>=1.0.0
+feedparser>=6.0.0
