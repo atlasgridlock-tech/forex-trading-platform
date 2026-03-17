@@ -24,6 +24,14 @@ except ImportError:
     RICH_DASHBOARD = False
     print("[Nexus] Rich dashboard not available, using basic")
 
+# Import monitoring dashboard
+try:
+    from monitoring import get_monitoring_dashboard_html, get_message_stats, log_message
+    MONITORING_AVAILABLE = True
+except ImportError:
+    MONITORING_AVAILABLE = False
+    print("[Nexus] Monitoring dashboard not available")
+
 app = FastAPI(title="Nexus - Orchestrator/CIO Agent", version="3.0")
 
 # Import workflow routes
@@ -113,12 +121,23 @@ async def fetch_agent_data(agent: str, endpoint: str, timeout: float = 5.0) -> O
     if not url:
         return None
     
+    import time
+    start_time = time.time()
     try:
         async with httpx.AsyncClient() as client:
             r = await client.get(f"{url}{endpoint}", timeout=timeout)
+            latency = (time.time() - start_time) * 1000
             if r.status_code == 200:
+                if MONITORING_AVAILABLE:
+                    log_message("nexus", agent, endpoint, "success", latency)
                 return r.json()
+            else:
+                if MONITORING_AVAILABLE:
+                    log_message("nexus", agent, endpoint, "error", latency)
     except Exception as e:
+        latency = (time.time() - start_time) * 1000
+        if MONITORING_AVAILABLE:
+            log_message("nexus", agent, endpoint, "error", latency)
         print(f"Error fetching from {agent}: {e}")
     return None
 
@@ -129,12 +148,23 @@ async def post_to_agent(agent: str, endpoint: str, data: dict, timeout: float = 
     if not url:
         return None
     
+    import time
+    start_time = time.time()
     try:
         async with httpx.AsyncClient() as client:
             r = await client.post(f"{url}{endpoint}", json=data, timeout=timeout)
+            latency = (time.time() - start_time) * 1000
             if r.status_code == 200:
+                if MONITORING_AVAILABLE:
+                    log_message("nexus", agent, f"POST {endpoint}", "success", latency)
                 return r.json()
+            else:
+                if MONITORING_AVAILABLE:
+                    log_message("nexus", agent, f"POST {endpoint}", "error", latency)
     except Exception as e:
+        latency = (time.time() - start_time) * 1000
+        if MONITORING_AVAILABLE:
+            log_message("nexus", agent, f"POST {endpoint}", "error", latency)
         print(f"Error posting to {agent}: {e}")
     return None
 
@@ -169,12 +199,12 @@ async def check_hard_gates(symbol: str, direction: str, strategy: str, stop_loss
         # API returns current_spread, not spread_pips
         spread = curator_data.get("current_spread", curator_data.get("spread_pips", 0))
         max_spread = CONFIG["hard_gates"]["max_spread_major"] if "JPY" not in symbol else CONFIG["hard_gates"]["max_spread_cross"]
-        spread_ok = spread < max_spread
+        spread_ok = spread <= max_spread
         gates.append({
             "gate": "Spread",
             "passed": spread_ok,
             "value": f"{spread:.1f} pips",
-            "threshold": f"< {max_spread}",
+            "threshold": f"<= {max_spread}",
             "source": "Curator",
         })
         if not spread_ok:
@@ -951,6 +981,47 @@ async def home():
 async def chat(request: ChatRequest):
     context = f"Recent decisions: {json.dumps(decisions_log[-5:], default=str)[:2000]}\nAgent status: {json.dumps(agent_status, default=str)[:1000]}"
     return {"response": await call_claude(request.message, context)}
+
+
+@app.get("/monitor", response_class=HTMLResponse)
+async def monitoring_dashboard():
+    """Agent monitoring dashboard with health status and message flow."""
+    await fetch_all_agent_status()
+    
+    if MONITORING_AVAILABLE:
+        message_stats = get_message_stats(minutes=5)
+        return get_monitoring_dashboard_html(agent_status, message_stats)
+    
+    # Fallback basic monitoring
+    online = len([a for a in agent_status.values() if a.get("status") == "online"])
+    return f'''<!DOCTYPE html>
+<html><head><title>Monitor</title><meta http-equiv="refresh" content="10">
+<style>body{{background:#0a0a0f;color:#e0e0e0;font-family:sans-serif;padding:20px}}</style>
+</head><body>
+<h1>Agent Monitor</h1>
+<p>Online: {online}/{len(agent_status)}</p>
+<a href="/">Back to Dashboard</a>
+</body></html>'''
+
+
+@app.get("/api/monitor/stats")
+async def get_monitor_stats():
+    """Get monitoring statistics as JSON."""
+    await fetch_all_agent_status()
+    
+    stats = {
+        "agents": {},
+        "messages": get_message_stats(minutes=5) if MONITORING_AVAILABLE else {},
+    }
+    
+    for key, status in agent_status.items():
+        stats["agents"][key] = {
+            "online": status.get("status") == "online",
+            "name": status.get("name", key),
+            "last_check": status.get("last_check"),
+        }
+    
+    return stats
 
 
 @app.get("/docs/how-i-work", response_class=HTMLResponse)

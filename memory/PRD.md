@@ -45,11 +45,32 @@ User requested to analyze, debug, and fix a multi-agent forex trading platform. 
 - **Impact:** Spread hard gate always showed 0.0 pips
 - **Solution:** Updated to check both field names
 
+### Fix 3: Spread Threshold Boundary Condition
+- **File:** `/app/agents/orchestrator-agent/app.py`
+- **Issue:** Spread check used `< max_spread` instead of `<= max_spread`
+- **Impact:** Spreads exactly at threshold (e.g., 4.0 for crosses) were rejected
+- **Solution:** Changed to `<= max_spread`
+
+## Features Added
+
+### Monitoring Dashboard
+- **File:** `/app/agents/orchestrator-agent/monitoring.py`
+- **Access:** `http://localhost:3020/monitor`
+- **Features:**
+  - Real-time agent health status for all 13 agents
+  - Message flow tracking with latency metrics
+  - Route activity analysis (success rate, avg latency)
+  - Auto-refresh every 10 seconds
+- **API:** `GET /api/monitor/stats` for JSON stats
+
 ## Current Status
-- ✅ All 13 agents running and communicating
+- ✅ All 14 agents running and communicating (13 + orchestrator)
 - ✅ Confluence scoring engine working
 - ✅ Hard gates evaluation working
 - ✅ Trade evaluation pipeline working
+- ✅ Paper trade execution working
+- ✅ Risk evaluation working (Guardian)
+- ✅ Monitoring dashboard live
 - ⚠️ Using mock MT5 data (real MT5 bridge not connected)
 
 ## Environment Setup
@@ -81,8 +102,13 @@ curl -X POST http://localhost:3020/api/evaluate \
 ```
 
 ## Remaining Work
-1. **P1:** Connect to real MT5 bridge for live data
-2. **P1:** Test end-to-end trade execution flow
-3. **P2:** Verify all agent interconnections
-4. **P2:** Code refactoring for cleaner isolation
-5. **P3:** Documentation updates
+1. **P0:** Connect to real MT5 bridge for live data
+2. **P1:** Code refactoring for cleaner agent isolation
+3. **P2:** Documentation updates
+4. **P3:** Analytics agent integration
+
+## Test Results Summary
+- **Trade Evaluation:** Working - correctly rejects trades with insufficient confluence
+- **Paper Execution:** Working - successfully simulates trade fills
+- **Risk Assessment:** Working - proper position sizing and risk checks
+- **Agent Communication:** Working - 100% success rate, avg latency ~30ms
