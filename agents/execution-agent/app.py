@@ -30,9 +30,13 @@ from shared import (
     internal_symbol as shared_internal_symbol,
     SYMBOL_SUFFIX,
     ChatRequest,
+    pip_value as shared_pip_value,
 )
 
-app = FastAPI(title="Executor - Execution Agent", version="2.0")
+# Import lifecycle manager
+from lifecycle_manager import LifecycleManager, LifecycleState
+
+app = FastAPI(title="Executor - Execution Agent", version="2.1")
 
 AGENT_NAME = "Executor"
 GUARDIAN_URL = get_agent_url("guardian")
@@ -127,6 +131,9 @@ trades_per_symbol_hour: Dict[str, int] = {}
 paper_positions: List[dict] = []
 paper_balance: float = 10000.0
 paper_equity: float = 10000.0
+
+# Position lifecycle manager
+lifecycle_mgr = LifecycleManager(pip_value_func=shared_pip_value)
 
 MAJOR_PAIRS = ["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "USDCAD", "AUDUSD", "NZDUSD"]
 
@@ -296,7 +303,7 @@ def calculate_health_score(receipt: dict) -> int:
 
 
 def execute_paper_order(order: OrderRequest) -> dict:
-    """Execute order in paper mode (simulation)."""
+    """Execute order in paper mode (simulation) with lifecycle tracking."""
     global paper_balance
     
     start_time = time.time()
@@ -325,8 +332,25 @@ def execute_paper_order(order: OrderRequest) -> dict:
         "entry_price": fill_price,
         "stop_loss": order.stop_loss,
         "take_profit": order.take_profit,
+        "take_profit_2": order.take_profit_2,
+        "take_profit_3": order.take_profit_3,
+        "trailing_stop_pips": order.trailing_stop_pips,
         "open_time": datetime.utcnow().isoformat(),
     })
+    
+    # Create lifecycle tracker for this position
+    lifecycle_mgr.create_lifecycle(
+        order_id=order_id,
+        symbol=order.symbol,
+        direction=order.direction.lower(),
+        entry_price=fill_price,
+        lot_size=order.lot_size,
+        stop_loss=order.stop_loss,
+        take_profit_1=order.take_profit,
+        take_profit_2=order.take_profit_2,
+        take_profit_3=order.take_profit_3,
+        trailing_trigger_pips=order.trailing_stop_pips,
+    )
     
     receipt = {
         "order_id": order_id,
@@ -338,6 +362,9 @@ def execute_paper_order(order: OrderRequest) -> dict:
         "fill_price": round(fill_price, 5),
         "stop_loss": order.stop_loss,
         "take_profit": order.take_profit,
+        "take_profit_2": order.take_profit_2,
+        "take_profit_3": order.take_profit_3,
+        "trailing_enabled": order.trailing_stop_pips is not None,
         "fill_time": datetime.utcnow().isoformat(),
         "latency_ms": latency_ms,
         "slippage_pips": round(-simulated_slippage, 2),  # Negative = favorable
@@ -1050,6 +1077,147 @@ async def modify_stop_loss(request: ModifySLRequest):
         return {"status": "TIMEOUT", "error": "MT5 did not respond"}
     
     return result
+
+
+# ═══════════════════════════════════════════════════════════════
+# POSITION LIFECYCLE MANAGEMENT
+# ═══════════════════════════════════════════════════════════════
+
+class UpdatePriceRequest(BaseModel):
+    order_id: str
+    current_price: float
+
+
+@app.post("/api/lifecycle/update-price")
+async def update_position_price(request: UpdatePriceRequest):
+    """
+    Update position with current price to trigger lifecycle actions.
+    Returns any actions needed (partial close, trailing SL update, etc.)
+    """
+    result = lifecycle_mgr.update_price(request.order_id, request.current_price)
+    
+    if "error" in result:
+        return {"status": "ERROR", "error": result["error"]}
+    
+    # Execute any actions
+    actions_taken = []
+    for action in result.get("actions", []):
+        if action["action"] == "PARTIAL_CLOSE":
+            # Update paper position
+            for pos in paper_positions:
+                if pos["order_id"] == request.order_id:
+                    pos["lot_size"] -= action["lot_size"]
+                    break
+            actions_taken.append({
+                "type": "partial_close",
+                "reason": action["reason"],
+                "lots_closed": action["lot_size"],
+                "price": action["price"],
+            })
+        
+        elif action["action"] == "MODIFY_SL":
+            # Update paper position SL
+            for pos in paper_positions:
+                if pos["order_id"] == request.order_id:
+                    pos["stop_loss"] = action["new_sl"]
+                    break
+            actions_taken.append({
+                "type": "modify_sl",
+                "reason": action["reason"],
+                "new_sl": action["new_sl"],
+                "old_sl": action["old_sl"],
+            })
+        
+        elif action["action"] == "CLOSE":
+            # Close the position
+            paper_positions[:] = [p for p in paper_positions if p["order_id"] != request.order_id]
+            actions_taken.append({
+                "type": "close",
+                "reason": action["reason"],
+                "price": action["price"],
+            })
+    
+    return {
+        "status": "OK",
+        "order_id": request.order_id,
+        "state": result.get("state"),
+        "pips_profit": result.get("pips_profit"),
+        "current_lot_size": result.get("current_lot_size"),
+        "current_sl": result.get("current_sl"),
+        "trailing_active": result.get("trailing_active"),
+        "breakeven_triggered": result.get("breakeven_triggered"),
+        "actions_taken": actions_taken,
+    }
+
+
+@app.get("/api/lifecycle/positions")
+async def get_lifecycle_positions():
+    """Get all positions with lifecycle state."""
+    return {
+        "positions": lifecycle_mgr.get_all_positions(),
+        "count": len(lifecycle_mgr.positions),
+    }
+
+
+@app.get("/api/lifecycle/position/{order_id}")
+async def get_lifecycle_position(order_id: str):
+    """Get lifecycle state for a specific position."""
+    lifecycle = lifecycle_mgr.get_position(order_id)
+    if not lifecycle:
+        return {"error": "Position not found"}
+    
+    return {
+        "order_id": lifecycle.order_id,
+        "symbol": lifecycle.symbol,
+        "direction": lifecycle.direction,
+        "entry_price": lifecycle.entry_price,
+        "original_lot_size": lifecycle.original_lot_size,
+        "current_lot_size": lifecycle.current_lot_size,
+        "stop_loss": lifecycle.stop_loss,
+        "original_sl": lifecycle.original_sl,
+        "take_profit_1": lifecycle.take_profit_1,
+        "take_profit_2": lifecycle.take_profit_2,
+        "take_profit_3": lifecycle.take_profit_3,
+        "state": lifecycle.state.value,
+        "trailing_enabled": lifecycle.trailing_enabled,
+        "trailing_active": lifecycle.trailing_active,
+        "breakeven_triggered": lifecycle.breakeven_triggered,
+        "partial_closes": lifecycle.partial_closes,
+    }
+
+
+class SimulatePriceRequest(BaseModel):
+    """Simulate price movement for testing lifecycle."""
+    order_id: str
+    prices: List[float]  # List of prices to simulate
+
+
+@app.post("/api/lifecycle/simulate")
+async def simulate_price_movement(request: SimulatePriceRequest):
+    """
+    Simulate a series of price movements for testing.
+    Useful for testing partial TPs and trailing stops.
+    """
+    results = []
+    for price in request.prices:
+        result = lifecycle_mgr.update_price(request.order_id, price)
+        results.append({
+            "price": price,
+            "state": result.get("state"),
+            "actions": result.get("actions", []),
+        })
+        
+        # Apply actions to paper positions
+        for action in result.get("actions", []):
+            if action["action"] == "CLOSE":
+                paper_positions[:] = [p for p in paper_positions if p["order_id"] != request.order_id]
+                break
+    
+    return {
+        "order_id": request.order_id,
+        "simulated_prices": len(request.prices),
+        "results": results,
+    }
 
 
 @app.post("/api/place-pending")

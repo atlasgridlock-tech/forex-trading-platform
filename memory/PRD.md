@@ -134,9 +134,44 @@ curl -X POST http://localhost:3020/api/evaluate \
 ```
 
 ## Remaining Work
-1. **P3:** Position lifecycle management (partial TPs, trailing stops)
-2. **P3:** Performance optimization
-3. **P3:** Extended documentation
+1. **P3:** Performance optimization (optional)
+2. **P3:** Extended documentation (optional)
+
+## Position Lifecycle Management ✅
+
+### Features Implemented
+- **Partial Take Profits**: Close 33% at TP1, 50% at TP2, 100% at TP3
+- **Break-Even**: Move SL to entry + 1 pip after 10 pips profit
+- **Trailing Stop**: Trail SL 15 pips behind price after 20 pips profit
+- **State Tracking**: OPEN → BREAKEVEN → TP1_HIT → TP2_HIT → TP3_HIT/CLOSED
+
+### API Endpoints
+- `POST /api/lifecycle/update-price` - Update position with current price
+- `GET /api/lifecycle/positions` - Get all positions with lifecycle state
+- `GET /api/lifecycle/position/{order_id}` - Get specific position lifecycle
+- `POST /api/lifecycle/simulate` - Simulate price movement for testing
+
+### Usage Example
+```bash
+# Execute with multiple TPs and trailing
+curl -X POST http://localhost:3019/api/execute -d '{
+  "symbol": "EURUSD",
+  "lot_size": 0.10,
+  "direction": "long",
+  "entry_price": 1.0850,
+  "stop_loss": 1.0820,
+  "take_profit": 1.0880,
+  "take_profit_2": 1.0910,
+  "take_profit_3": 1.0940,
+  "trailing_stop_pips": 20
+}'
+
+# Simulate price to test lifecycle
+curl -X POST http://localhost:3019/api/lifecycle/simulate -d '{
+  "order_id": "PAPER-xxx",
+  "prices": [1.0860, 1.0880, 1.0910, 1.0940]
+}'
+```
 
 ## Refactoring Progress
 
