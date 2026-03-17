@@ -14,10 +14,79 @@ import logging
 from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Optional, Dict, Any, List
+from enum import Enum
+from dataclasses import dataclass, field
 import redis.asyncio as redis
 import httpx
 
 logger = logging.getLogger(__name__)
+
+
+class AgentHealthStatus(str, Enum):
+    """Health status for agents."""
+    HEALTHY = "healthy"
+    DEGRADED = "degraded"
+    UNHEALTHY = "unhealthy"
+    UNKNOWN = "unknown"
+
+
+@dataclass
+class AgentMessage:
+    """Message passed between agents."""
+    from_agent: str
+    to_agent: str
+    message_type: str
+    payload: Dict[str, Any]
+    timestamp: datetime = field(default_factory=datetime.utcnow)
+    correlation_id: Optional[str] = None
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "from_agent": self.from_agent,
+            "to_agent": self.to_agent,
+            "message_type": self.message_type,
+            "payload": self.payload,
+            "timestamp": self.timestamp.isoformat(),
+            "correlation_id": self.correlation_id,
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "AgentMessage":
+        return cls(
+            from_agent=data["from_agent"],
+            to_agent=data["to_agent"],
+            message_type=data["message_type"],
+            payload=data["payload"],
+            timestamp=datetime.fromisoformat(data["timestamp"]) if isinstance(data.get("timestamp"), str) else datetime.utcnow(),
+            correlation_id=data.get("correlation_id"),
+        )
+
+
+@dataclass
+class AgentOutput:
+    """Standard output format for agent analysis."""
+    agent_id: str
+    agent_name: str
+    timestamp: datetime
+    symbol: Optional[str] = None
+    analysis: Dict[str, Any] = field(default_factory=dict)
+    confidence: float = 0.0
+    signals: List[str] = field(default_factory=list)
+    recommendations: List[str] = field(default_factory=list)
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "agent_id": self.agent_id,
+            "agent_name": self.agent_name,
+            "timestamp": self.timestamp.isoformat(),
+            "symbol": self.symbol,
+            "analysis": self.analysis,
+            "confidence": self.confidence,
+            "signals": self.signals,
+            "recommendations": self.recommendations,
+            "metadata": self.metadata,
+        }
 
 
 class BaseAgent(ABC):
