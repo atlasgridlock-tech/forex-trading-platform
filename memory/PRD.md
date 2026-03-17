@@ -134,10 +134,9 @@ curl -X POST http://localhost:3020/api/evaluate \
 ```
 
 ## Remaining Work
-1. **P2:** Complete refactoring of remaining agents (regime-agent done as template)
+1. **P2:** Complete refactoring of remaining 10 agents (regime, technical, structure, analytics done)
 2. **P2:** Documentation updates
-3. **P2:** Analytics agent full integration
-4. **P3:** Position lifecycle management (partial TPs, trailing stops)
+3. **P3:** Position lifecycle management (partial TPs, trailing stops)
 
 ## Refactoring Progress
 
@@ -147,6 +146,10 @@ curl -X POST http://localhost:3020/api/evaluate \
 - ✅ `base_agent.py` - Base classes for agents
 - ✅ `__init__.py` - Clean imports
 - ✅ Refactored `regime-agent` as template
+- ✅ Refactored `technical-agent` 
+- ✅ Refactored `structure-agent`
+- ✅ Refactored `analytics-agent`
+- ✅ Integrated Analytics Agent (Insight) into orchestrator
 
 ### Shared Module Benefits
 - ~465 lines of duplicate code eliminated

@@ -61,6 +61,7 @@ AGENT_URLS = {
     "executor": os.getenv("EXECUTOR_URL", "http://execution-agent:8000"),
     "chronicle": os.getenv("CHRONICLE_URL", "http://journal-agent:8000"),
     "arbiter": os.getenv("ARBITER_URL", "http://governance-agent:8000"),
+    "insight": os.getenv("ANALYTICS_URL", "http://analytics-agent:8000"),
 }
 
 
@@ -776,6 +777,7 @@ async def fetch_all_agent_status():
         ("executor", "execution-agent"),
         ("chronicle", "journal-agent"),
         ("arbiter", "governance-agent"),
+        ("insight", "analytics-agent"),
     ]
     
     for agent_key, _ in agents:

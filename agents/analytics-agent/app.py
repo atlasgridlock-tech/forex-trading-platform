@@ -4,6 +4,7 @@ Performance analysis, edge detection, statistical validation
 """
 
 import os
+import sys
 import json
 import asyncio
 import httpx
@@ -13,20 +14,23 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
-from pydantic import BaseModel
 from collections import defaultdict
+
+# Add shared module to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from shared import (
+    call_claude,
+    get_agent_url,
+    fetch_json,
+    post_json,
+    ChatRequest,
+)
 
 app = FastAPI(title="Insight - Performance Analytics Agent", version="1.0")
 
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-JOURNAL_URL = os.getenv("JOURNAL_URL", "http://journal-agent:8000")
-ORCHESTRATOR_URL = os.getenv("ORCHESTRATOR_URL", "http://orchestrator-agent:8000")
 AGENT_NAME = "Insight"
-WORKSPACE = Path("/app/workspace")
-
-
-class ChatRequest(BaseModel):
-    message: str
+JOURNAL_URL = get_agent_url("chronicle")
+ORCHESTRATOR_URL = get_agent_url("orchestrator")
 
 
 # Cache for analytics
@@ -35,16 +39,9 @@ last_compute: Optional[datetime] = None
 
 
 async def fetch_trades(days: int = 30) -> List[dict]:
-    """Fetch trades from Chronicle."""
-    try:
-        async with httpx.AsyncClient() as client:
-            r = await client.get(f"{JOURNAL_URL}/api/trades?days={days}", timeout=10.0)
-            if r.status_code == 200:
-                data = r.json()
-                return data.get("trades", [])
-    except Exception as e:
-        print(f"Error fetching trades: {e}")
-    return []
+    """Fetch trades from Chronicle using shared fetch_json."""
+    data = await fetch_json(f"{JOURNAL_URL}/api/trades?days={days}", timeout=10.0)
+    return data.get("trades", []) if data else []
 
 
 def calculate_expectancy(trades: List[dict]) -> float:
@@ -446,24 +443,7 @@ async def compute_full_analytics(days: int = 30) -> dict:
     }
 
 
-async def call_claude(prompt: str, context: str = "") -> str:
-    if not ANTHROPIC_API_KEY:
-        return "[No API key]"
-    soul = (WORKSPACE / "SOUL.md").read_text() if (WORKSPACE / "SOUL.md").exists() else ""
-    try:
-        async with httpx.AsyncClient() as client:
-            r = await client.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={"x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json"},
-                json={"model": "claude-sonnet-4-20250514", "max_tokens": 2048, "system": soul,
-                      "messages": [{"role": "user", "content": f"{context}\n\n{prompt}" if context else prompt}]},
-                timeout=60.0
-            )
-            if r.status_code == 200:
-                return r.json()["content"][0]["text"]
-    except:
-        pass
-    return "[Error]"
+# Using shared call_claude - removed duplicate implementation
 
 
 @app.on_event("startup")
@@ -662,7 +642,8 @@ async def home():
 async def chat(request: ChatRequest):
     analytics = await compute_full_analytics(30)
     context = f"Analytics: {json.dumps(analytics, default=str)[:4000]}"
-    return {"response": await call_claude(request.message, context)}
+    response = await call_claude(request.message, context, agent_name=AGENT_NAME)
+    return {"response": response}
 
 
 @app.get("/api/analytics")
