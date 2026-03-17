@@ -7,6 +7,8 @@ User requested to analyze, debug, and fix a multi-agent forex trading platform. 
 
 ### Quick Links
 - **[How It Works - Complete Guide](/app/docs/HOW_IT_WORKS.md)** - Full A-Z system documentation
+- **[Installation Guide](/app/docs/INSTALLATION_GUIDE.md)** - Fresh install on new machine
+- **[Live Trading Guide](/app/docs/LIVE_TRADING_GUIDE.md)** - MT5 setup for live trading
 - **[Quick Start Tutorial](/app/docs/QUICK_START_TUTORIAL.md)** - Interactive hands-on guide
 - **[Video Script](/app/docs/VIDEO_SCRIPT.md)** - 10-minute walkthrough script
 - **[Agent Directory](/app/docs/AGENTS_DIRECTORY.md)** - Quick reference for all agents
