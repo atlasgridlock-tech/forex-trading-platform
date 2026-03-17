@@ -4,6 +4,7 @@ Market regime classification, strategy gating, risk adjustment
 """
 
 import os
+import sys
 import json
 import asyncio
 import httpx
@@ -12,27 +13,33 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
-from pydantic import BaseModel
 from enum import Enum
+
+# Add shared module to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from shared import (
+    call_claude,
+    get_agent_url,
+    fetch_json,
+    post_json,
+    get_current_session,
+    FOREX_SYMBOLS,
+    ChatRequest,
+)
 
 app = FastAPI(title="Compass - Regime Detection Agent", version="2.0")
 
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-CURATOR_URL = os.getenv("CURATOR_URL", "http://data-agent:8000")
-NEWS_URL = os.getenv("NEWS_URL", "http://news-agent:8000")
-ORCHESTRATOR_URL = os.getenv("ORCHESTRATOR_URL", "http://orchestrator-agent:8000")
+# Agent configuration
 AGENT_NAME = "Compass"
-WORKSPACE = Path("/app/workspace")
+CURATOR_URL = get_agent_url("curator")
+NEWS_URL = get_agent_url("sentinel")
+ORCHESTRATOR_URL = get_agent_url("orchestrator")
 
-SYMBOLS = ["EURUSD", "GBPUSD", "USDJPY", "GBPJPY", "USDCHF", "USDCAD", "EURAUD", "AUDNZD", "AUDUSD"]
+SYMBOLS = FOREX_SYMBOLS
 TIMEFRAMES = ["M30", "H1", "H4", "D1"]
 
 # Regime cache
 regime_data: Dict[str, dict] = {}
-
-
-class ChatRequest(BaseModel):
-    message: str
 
 
 class Regime(str, Enum):
@@ -72,27 +79,16 @@ REGIME_RISK_MULTIPLIERS = {
 
 
 async def fetch_candles(symbol: str, timeframe: str) -> List[dict]:
-    """Fetch candles from Curator."""
-    try:
-        async with httpx.AsyncClient() as client:
-            r = await client.get(f"{CURATOR_URL}/api/snapshot/timeframe/{symbol}/{timeframe}", timeout=5.0)
-            if r.status_code == 200:
-                return r.json().get("candles", [])
-    except:
-        pass
-    return []
+    """Fetch candles from Curator using shared fetch_json."""
+    data = await fetch_json(f"{CURATOR_URL}/api/snapshot/timeframe/{symbol}/{timeframe}")
+    return data.get("candles", []) if data else []
 
 
 async def check_event_risk(symbol: str) -> bool:
     """Check if symbol is in event-driven mode."""
-    try:
-        async with httpx.AsyncClient() as client:
-            r = await client.get(f"{NEWS_URL}/api/risk/{symbol}", timeout=3.0)
-            if r.status_code == 200:
-                risk = r.json()
-                return risk.get("mode") == "pause" or risk.get("risk_score", 0) > 80
-    except:
-        pass
+    risk = await fetch_json(f"{NEWS_URL}/api/risk/{symbol}", timeout=3.0)
+    if risk:
+        return risk.get("mode") == "pause" or risk.get("risk_score", 0) > 80
     return False
 
 
@@ -347,27 +343,22 @@ async def analyze_symbol(symbol: str) -> dict:
 
 
 async def send_to_orchestrator(symbol: str, analysis: dict):
-    """Send regime analysis to Orchestrator."""
-    try:
-        async with httpx.AsyncClient() as client:
-            await client.post(
-                f"{ORCHESTRATOR_URL}/api/ingest",
-                json={
-                    "agent_id": "regime",
-                    "agent_name": AGENT_NAME,
-                    "output_type": "signal",
-                    "timestamp": datetime.utcnow().isoformat(),
-                    "data": {
-                        "symbol": symbol,
-                        "direction": "bullish" if "trending" in analysis["primary_regime"].lower() else "neutral",
-                        "confidence": analysis["confidence"] / 100,
-                        "reason": f"{analysis['primary_regime']} (risk: {analysis['risk_multiplier']}x)",
-                    },
-                },
-                timeout=5.0
-            )
-    except:
-        pass
+    """Send regime analysis to Orchestrator using shared post_json."""
+    await post_json(
+        f"{ORCHESTRATOR_URL}/api/ingest",
+        {
+            "agent_id": "regime",
+            "agent_name": AGENT_NAME,
+            "output_type": "signal",
+            "timestamp": datetime.utcnow().isoformat(),
+            "data": {
+                "symbol": symbol,
+                "direction": "bullish" if "trending" in analysis["primary_regime"].lower() else "neutral",
+                "confidence": analysis["confidence"] / 100,
+                "reason": f"{analysis['primary_regime']} (risk: {analysis['risk_multiplier']}x)",
+            },
+        }
+    )
 
 
 async def background_analysis():
@@ -387,24 +378,7 @@ async def background_analysis():
         await asyncio.sleep(60)
 
 
-async def call_claude(prompt: str, context: str = "") -> str:
-    if not ANTHROPIC_API_KEY:
-        return "[No API key]"
-    soul = (WORKSPACE / "SOUL.md").read_text() if (WORKSPACE / "SOUL.md").exists() else ""
-    try:
-        async with httpx.AsyncClient() as client:
-            r = await client.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={"x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json"},
-                json={"model": "claude-sonnet-4-20250514", "max_tokens": 2048, "system": soul,
-                      "messages": [{"role": "user", "content": f"{context}\n\n{prompt}" if context else prompt}]},
-                timeout=60.0
-            )
-            if r.status_code == 200:
-                return r.json()["content"][0]["text"]
-    except:
-        pass
-    return "[Error]"
+# Use shared call_claude - removed duplicate implementation
 
 
 @app.on_event("startup")
@@ -581,7 +555,8 @@ async def home():
 @app.post("/chat")
 async def chat(request: ChatRequest):
     context = f"Regime Data:\n{json.dumps(regime_data, indent=2, default=str)[:6000]}"
-    return {"response": await call_claude(request.message, context)}
+    response = await call_claude(request.message, context, agent_name=AGENT_NAME)
+    return {"response": response}
 
 
 @app.get("/api/regimes")

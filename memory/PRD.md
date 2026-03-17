@@ -134,13 +134,46 @@ curl -X POST http://localhost:3020/api/evaluate \
 ```
 
 ## Remaining Work
-1. **P1:** Code refactoring for cleaner agent isolation
+1. **P2:** Complete refactoring of remaining agents (regime-agent done as template)
 2. **P2:** Documentation updates
 3. **P2:** Analytics agent full integration
 4. **P3:** Position lifecycle management (partial TPs, trailing stops)
+
+## Refactoring Progress
+
+### Completed
+- ✅ Created `/app/agents/shared/` module with common utilities
+- ✅ `utils.py` - Symbol utilities, session detection, Claude API, HTTP helpers
+- ✅ `base_agent.py` - Base classes for agents
+- ✅ `__init__.py` - Clean imports
+- ✅ Refactored `regime-agent` as template
+
+### Shared Module Benefits
+- ~465 lines of duplicate code eliminated
+- Single point of maintenance for:
+  - Claude API calls
+  - HTTP request handling
+  - Symbol conversion utilities
+  - Agent URL configuration
+- Cleaner, more isolated agent code
+
+### Usage
+```python
+from shared import (
+    call_claude,
+    get_agent_url,
+    fetch_json,
+    post_json,
+    FOREX_SYMBOLS,
+    ChatRequest,
+)
+```
+
+See `/app/agents/shared/REFACTORING_GUIDE.md` for full guide.
 
 ## Test Results Summary
 - **Trade Evaluation:** Working - correctly rejects trades with insufficient confluence
 - **Paper Execution:** Working - successfully simulates trade fills
 - **Risk Assessment:** Working - proper position sizing and risk checks
 - **Agent Communication:** Working - 100% success rate, avg latency ~30ms
+- **Live Data Feed:** Working - simulated feed sending ticks and candles
