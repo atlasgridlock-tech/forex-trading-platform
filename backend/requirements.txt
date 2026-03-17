@@ -1,0 +1,73 @@
+# ================================================================================
+# FOREX TRADING PLATFORM - PYTHON DEPENDENCIES
+# ================================================================================
+
+# Web Framework
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.6
+websockets>=12.0
+
+# Database
+sqlalchemy[asyncio]>=2.0.25
+asyncpg>=0.29.0
+alembic>=1.13.1
+psycopg2-binary>=2.9.9
+
+# Redis / Task Queue
+redis>=5.0.1
+celery>=5.3.6
+
+# Data Validation & Settings
+pydantic>=2.5.3
+pydantic-settings>=2.1.0
+python-dotenv>=1.0.0
+
+# Scientific / Data Processing
+pandas>=2.1.4
+numpy>=1.26.3
+scipy>=1.12.0
+ta-lib>=0.4.28
+# pandas-ta>=0.3.14b  # Optional, use built-in indicators
+
+# MetaTrader 5 (Windows only - optional)
+# MetaTrader5>=5.0.45
+
+# Logging
+structlog>=24.1.0
+python-json-logger>=2.0.7
+
+# HTTP Client
+httpx>=0.26.0
+aiohttp>=3.9.1
+
+# Date/Time
+python-dateutil>=2.8.2
+pytz>=2024.1
+
+# Utilities
+orjson>=3.9.12
+pyyaml>=6.0.1
+tenacity>=8.2.3
+cachetools>=5.3.2
+
+# Testing
+pytest>=7.4.4
+pytest-asyncio>=0.23.3
+pytest-cov>=4.1.0
+httpx>=0.26.0
+factory-boy>=3.3.0
+faker>=22.2.0
+
+# Development
+black>=24.1.0
+isort>=5.13.2
+flake8>=7.0.0
+mypy>=1.8.0
+pre-commit>=3.6.0
+
+# Type stubs
+types-redis>=4.6.0
+types-python-dateutil>=2.8.19
+types-PyYAML>=6.0.12
+feedparser>=6.0.0

@@ -1,0 +1,94 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-primary: #0f1117;
+  --bg-secondary: #1a1d26;
+  --bg-tertiary: #242833;
+  --text-primary: #e5e7eb;
+  --text-secondary: #9ca3af;
+  --text-muted: #6b7280;
+  --accent-green: #10b981;
+  --accent-red: #ef4444;
+  --accent-yellow: #f59e0b;
+  --accent-blue: #3b82f6;
+  --border-color: #374151;
+}
+
+body {
+  @apply bg-[var(--bg-primary)] text-[var(--text-primary)] font-sans;
+  margin: 0;
+  min-height: 100vh;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-[var(--bg-secondary)];
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-[var(--border-color)] rounded;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-gray-500;
+}
+
+/* Trading-specific colors */
+.text-bullish { color: var(--accent-green); }
+.text-bearish { color: var(--accent-red); }
+.text-neutral { color: var(--accent-yellow); }
+
+.bg-bullish { background-color: var(--accent-green); }
+.bg-bearish { background-color: var(--accent-red); }
+
+/* Card styles */
+.card {
+  @apply bg-[var(--bg-secondary)] rounded-lg border border-[var(--border-color)] p-4;
+}
+
+.card-header {
+  @apply text-sm font-medium text-[var(--text-secondary)] uppercase tracking-wider mb-3;
+}
+
+/* Status indicators */
+.status-dot {
+  @apply w-2 h-2 rounded-full inline-block;
+}
+
+.status-dot.healthy { @apply bg-green-500; }
+.status-dot.warning { @apply bg-yellow-500; }
+.status-dot.error { @apply bg-red-500; }
+.status-dot.offline { @apply bg-gray-500; }
+
+/* Metric display */
+.metric-value {
+  @apply text-2xl font-bold;
+}
+
+.metric-label {
+  @apply text-xs text-[var(--text-muted)] uppercase;
+}
+
+/* Tables */
+.data-table {
+  @apply w-full text-sm;
+}
+
+.data-table th {
+  @apply text-left text-[var(--text-secondary)] font-medium py-2 px-3 border-b border-[var(--border-color)];
+}
+
+.data-table td {
+  @apply py-2 px-3 border-b border-[var(--border-color)];
+}
+
+.data-table tr:hover {
+  @apply bg-[var(--bg-tertiary)];
+}

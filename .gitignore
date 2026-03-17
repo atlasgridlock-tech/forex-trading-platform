@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+ENV/
+env/
+*.egg-info/
+dist/
+build/
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Docker
+*.log
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Environment & Secrets
+.env
+.env.*
+*.pem
+*.key
+secrets/
+credentials/
+
+# Data files (large)
+*.csv
+*.parquet
+*.db
+*.sqlite
+data/cache/
+data/historical/
+
+# MT5 files
+*.ex5
+*.mq5
+
+# Temp
+tmp/
+temp/
+*.tmp

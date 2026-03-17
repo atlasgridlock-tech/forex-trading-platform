@@ -1,0 +1,33 @@
+[
+  {
+    "version": "PULLBACK_TREND-v1.1.0",
+    "created_at": "2026-03-12T16:44:21.556568",
+    "created_by": "tactician",
+    "change_type": "minor",
+    "description": "Adjust RSI overbought threshold from 70 to 68",
+    "rationale": "Earlier reversal signals in recent trending markets",
+    "changes": {
+      "rsi_overbought": {
+        "old": 70,
+        "new": 68
+      }
+    },
+    "validation": {
+      "in_sample_pf": 2.1,
+      "in_sample_wr": 58.0,
+      "in_sample_trades": 245,
+      "out_of_sample_pf": 1.9,
+      "out_of_sample_wr": 55.0,
+      "out_of_sample_trades": 89,
+      "walk_forward_positive": 5,
+      "walk_forward_total": 6,
+      "paper_trades": 42,
+      "paper_result_r": 8.2
+    },
+    "approved_by": "Arbiter",
+    "rollback_version": "PULLBACK_TREND-v1.0.0",
+    "request_id": "CR-20260312164417-0751",
+    "overfit_score": 0,
+    "status": "active"
+  }
+]

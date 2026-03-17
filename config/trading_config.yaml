@@ -1,0 +1,130 @@
+# ================================================================================
+# TRADING CONFIGURATION
+# ================================================================================
+# Core trading parameters: pairs, timeframes, scoring weights, thresholds
+
+# ================================================================================
+# FOREX PAIRS
+# ================================================================================
+pairs:
+  - GBPJPY
+  - EURUSD
+  - GBPUSD
+  - USDJPY
+  - USDCHF
+  - USDCAD
+  - EURAUD
+  - AUDNZD
+  - AUDUSD
+
+# ================================================================================
+# TIMEFRAMES
+# ================================================================================
+timeframes:
+  data_collection:
+    - M1
+    - M5
+    - M15
+    - M30
+    - H1
+    - H4
+    - D1
+  
+  analysis:
+    - M15
+    - M30  # PRIMARY
+    - H1
+    - H4
+    - D1
+  
+  primary: M30
+  execution_precision:
+    - M5
+    - M15
+
+# ================================================================================
+# CONFLUENCE SCORING WEIGHTS
+# ================================================================================
+# These weights determine how much each category contributes to the final score
+scoring_weights:
+  technical_alignment: 0.25
+  structural_quality: 0.20
+  macro_alignment: 0.15
+  regime_fit: 0.15
+  sentiment_alignment: 0.10
+  risk_execution_viability: 0.15
+
+# ================================================================================
+# DECISION THRESHOLDS
+# ================================================================================
+decision_thresholds:
+  trade_threshold: 0.65      # Score >= this = approved for trading
+  watchlist_threshold: 0.50  # Score >= this but < trade_threshold = watchlist
+  # Score < watchlist_threshold = NO_TRADE
+
+# ================================================================================
+# VETO THRESHOLDS
+# ================================================================================
+veto_config:
+  # Maximum number of agents that can disagree before veto
+  max_agent_disagreement: 3
+  
+  # Data quality minimum for trading
+  min_data_quality: 0.70
+  
+  # Minimum risk:reward ratio
+  min_risk_reward: 1.5
+  preferred_risk_reward: 2.0
+
+# ================================================================================
+# SESSION TIMES (UTC)
+# ================================================================================
+sessions:
+  asian:
+    start: "23:00"
+    end: "08:00"
+  
+  london:
+    start: "07:00"
+    end: "16:00"
+  
+  new_york:
+    start: "12:00"
+    end: "21:00"
+  
+  # Overlap periods often have best liquidity
+  overlaps:
+    london_new_york:
+      start: "12:00"
+      end: "16:00"
+
+# ================================================================================
+# MARKET PREP TIMES (UTC)
+# ================================================================================
+market_prep:
+  london_open_prep: "07:30"
+  new_york_open_prep: "12:30"
+  end_of_day_review: "22:00"
+
+# ================================================================================
+# DATA REFRESH INTERVALS (seconds)
+# ================================================================================
+data_refresh:
+  fast:
+    interval_seconds: 30
+    timeframes:
+      - M1
+      - M5
+  
+  medium:
+    interval_seconds: 60
+    timeframes:
+      - M15
+      - M30
+  
+  slow:
+    interval_seconds: 300
+    timeframes:
+      - H1
+      - H4
+      - D1

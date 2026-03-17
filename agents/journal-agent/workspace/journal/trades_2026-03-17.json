@@ -1,0 +1,122 @@
+[
+  {
+    "trade_id": "EURAUD-20260316",
+    "symbol": "EURAUD",
+    "direction": "short",
+    "entry_price": 1.62693,
+    "stop_loss": 1.62968,
+    "take_profit": 1.62425,
+    "lot_size": 0.11,
+    "status": "executed",
+    "created_at": "2026-03-17T01:40:06.561749",
+    "confluence_at_entry": {
+      "total": 82,
+      "breakdown": {
+        "technical": 22,
+        "structure": 8,
+        "macro": 14,
+        "sentiment": 10,
+        "regime": 10,
+        "risk_execution": 15
+      }
+    },
+    "thesis": {
+      "strategy": "TREND_CONTINUATION",
+      "why_here": "Bearish structure with lower lows/highs",
+      "why_now": "Confluence score 82/100, contrarian sentiment",
+      "why_direction": "Trend direction bearish, macro bearish (82% conf)",
+      "invalidation": "Stop at 1.62968 (above recent swing)",
+      "confidence": 100
+    },
+    "entry_trigger": "Trend continuation in bearish structure",
+    "entry_type": "market",
+    "executed_at": "2026-03-17T01:40:06.561756",
+    "fill_price": 1.62693,
+    "slippage_pips": 0.0,
+    "broker_ticket": 2088954329,
+    "why_here": "Bearish structure with lower lows/highs",
+    "why_now": "Confluence score 82/100, contrarian sentiment",
+    "why_direction": "Trend direction bearish, macro bearish (82% conf)",
+    "invalidation": "Stop at 1.62968 (above recent swing)"
+  },
+  {
+    "trade_id": "SETUP-EURUSD-20260317014235",
+    "symbol": "EURUSD",
+    "direction": "short",
+    "entry_price": 1.14867,
+    "stop_loss": 1.15102,
+    "take_profit": 1.14639,
+    "lot_size": 0.09,
+    "status": "executed",
+    "created_at": "2026-03-17T01:42:35.839130",
+    "confluence_at_entry": {
+      "total": 76,
+      "breakdown": {
+        "technical": 22,
+        "structure": 10,
+        "macro": 14,
+        "sentiment": 5,
+        "regime": 10,
+        "risk_execution": 15
+      }
+    },
+    "thesis": {
+      "strategy": "TREND_CONTINUATION",
+      "why_here": "Strategy: Trend Continuation",
+      "why_now": "Score: 87/100",
+      "why_direction": "Trend direction from Atlas Jr. (bearish)",
+      "invalidation": "Stop at 1.15102",
+      "confidence": 87
+    },
+    "entry_trigger": "Trend direction from Atlas Jr. (bearish)",
+    "entry_type": "market",
+    "executed_at": "2026-03-17T01:42:35.839142",
+    "fill_price": 1.14867,
+    "slippage_pips": 0.0,
+    "broker_ticket": 2089574139,
+    "why_here": "Strategy: Trend Continuation",
+    "why_now": "Score: 87/100",
+    "why_direction": "Trend direction from Atlas Jr. (bearish)",
+    "invalidation": "Stop at 1.15102"
+  },
+  {
+    "trade_id": "SETUP-GBPUSD-20260317014236",
+    "symbol": "GBPUSD",
+    "direction": "short",
+    "entry_price": 1.3298,
+    "stop_loss": 1.33229,
+    "take_profit": 1.32736,
+    "lot_size": 0.07,
+    "status": "executed",
+    "created_at": "2026-03-17T01:42:37.364048",
+    "confluence_at_entry": {
+      "total": 76,
+      "breakdown": {
+        "technical": 22,
+        "structure": 10,
+        "macro": 14,
+        "sentiment": 5,
+        "regime": 10,
+        "risk_execution": 15
+      }
+    },
+    "thesis": {
+      "strategy": "BREAKOUT",
+      "why_here": "Strategy: Breakout Trade",
+      "why_now": "Score: 87/100",
+      "why_direction": "Breakout direction from Atlas Jr. (bearish)",
+      "invalidation": "Stop at 1.33229",
+      "confidence": 87
+    },
+    "entry_trigger": "Breakout direction from Atlas Jr. (bearish)",
+    "entry_type": "market",
+    "executed_at": "2026-03-17T01:42:37.364053",
+    "fill_price": 1.3298,
+    "slippage_pips": 0.1,
+    "broker_ticket": 2089574176,
+    "why_here": "Strategy: Breakout Trade",
+    "why_now": "Score: 87/100",
+    "why_direction": "Breakout direction from Atlas Jr. (bearish)",
+    "invalidation": "Stop at 1.33229"
+  }
+]

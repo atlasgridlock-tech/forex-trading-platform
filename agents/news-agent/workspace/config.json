@@ -1,0 +1,29 @@
+{
+  "feeds": {
+    "forexlive": {
+      "url": "https://www.forexlive.com/feed/news",
+      "enabled": true
+    },
+    "fxstreet": {
+      "url": "https://www.fxstreet.com/rss/news",
+      "enabled": true
+    },
+    "investing_forex": {
+      "url": "https://www.investing.com/rss/news_14.rss",
+      "enabled": true
+    },
+    "investing_economic": {
+      "url": "https://www.investing.com/rss/news_95.rss",
+      "enabled": true
+    },
+    "dailyfx": {
+      "url": "https://www.dailyfx.com/feeds/market-news",
+      "enabled": true
+    },
+    "newsquawk": {
+      "url": "https://newsquawk.com/rss",
+      "enabled": true
+    }
+  },
+  "fetch_interval": 30
+}

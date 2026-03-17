@@ -1,0 +1,145 @@
+# ================================================================================
+# RISK POLICY CONFIGURATION
+# ================================================================================
+# CRITICAL: These are the safety constraints that protect capital.
+# Changes to this file should be carefully reviewed.
+
+# ================================================================================
+# POSITION SIZING
+# ================================================================================
+position_sizing:
+  default_risk_per_trade_pct: 0.35
+  min_risk_per_trade_pct: 0.10
+  max_risk_per_trade_pct: 0.50
+  
+  # ABSOLUTE MAXIMUM - NEVER EXCEED
+  absolute_max_risk_per_trade_pct: 1.00
+
+# ================================================================================
+# DRAWDOWN LIMITS
+# ================================================================================
+# When these limits are breached, trading is automatically halted
+drawdown_limits:
+  max_daily_loss_pct: 2.00
+  max_weekly_drawdown_pct: 4.00
+  max_monthly_drawdown_pct: 6.00
+  
+  # System-level hard stop - requires manual reset
+  hard_system_pause_drawdown_pct: 8.00
+
+# ================================================================================
+# POSITION LIMITS
+# ================================================================================
+position_limits:
+  max_simultaneous_positions: 5
+  max_positions_per_symbol: 1
+  max_same_direction_positions: 3
+  
+  # Correlated pair exposure (e.g., EURUSD + GBPUSD both long)
+  max_correlated_pair_exposure: 2
+
+# ================================================================================
+# DAILY DISCIPLINE
+# ================================================================================
+daily_discipline:
+  max_trades_per_symbol_per_day: 2
+  max_total_new_trades_per_day: 6
+  
+  # After N consecutive losses, pause for cooldown
+  cooldown_after_consecutive_losses: 2
+  cooldown_duration_minutes: 60
+  
+  # Stop new trades after hitting daily loss limit
+  stop_new_trades_after_daily_loss: true
+
+# ================================================================================
+# SPREAD LIMITS (in pips)
+# ================================================================================
+# Maximum spread allowed for trading each pair
+spread_limits:
+  EURUSD: 2.0
+  GBPUSD: 2.5
+  USDJPY: 2.0
+  GBPJPY: 4.0
+  USDCHF: 2.5
+  USDCAD: 2.5
+  EURAUD: 3.5
+  AUDNZD: 3.5
+  AUDUSD: 2.0
+  default: 3.0
+
+# ================================================================================
+# EXECUTION LIMITS
+# ================================================================================
+execution_limits:
+  max_slippage_pips: 2.0
+  
+  # Spread should not exceed this % of stop distance
+  max_spread_to_stop_ratio: 0.30
+
+# ================================================================================
+# RISK MODES
+# ================================================================================
+# Multipliers applied to position sizing based on system state
+risk_modes:
+  normal:
+    risk_multiplier: 1.0
+    description: "Standard trading conditions"
+  
+  reduced:
+    risk_multiplier: 0.60
+    trigger: "drawdown > 50% of daily limit OR regime uncertain"
+    description: "Reduced exposure due to elevated risk"
+  
+  defensive:
+    risk_multiplier: 0.30
+    trigger: "drawdown > 75% of weekly limit"
+    description: "Minimal exposure, capital preservation mode"
+  
+  halted:
+    risk_multiplier: 0.0
+    trigger: "hard limits breached"
+    description: "No new trades until manual reset"
+
+# ================================================================================
+# EVENT RISK WINDOWS
+# ================================================================================
+# Time buffers around high-impact events
+event_risk:
+  high_impact:
+    pre_event_block_minutes: 30
+    post_event_cooldown_minutes: 15
+  
+  medium_impact:
+    pre_event_block_minutes: 15
+    post_event_cooldown_minutes: 5
+  
+  low_impact:
+    pre_event_block_minutes: 0
+    post_event_cooldown_minutes: 0
+
+# ================================================================================
+# CORRELATION GROUPS
+# ================================================================================
+# Pairs that tend to move together
+correlation_groups:
+  usd_pairs:
+    - EURUSD
+    - GBPUSD
+    - USDJPY
+    - USDCHF
+    - USDCAD
+    - AUDUSD
+  
+  eur_crosses:
+    - EURUSD
+    - EURAUD
+  
+  gbp_pairs:
+    - GBPUSD
+    - GBPJPY
+  
+  commodity_currencies:
+    - AUDUSD
+    - AUDNZD
+    - USDCAD

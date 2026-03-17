@@ -1,0 +1,424 @@
+# ═══════════════════════════════════════════════════════════════
+# FOREX TRADING PLATFORM - COMPLETE AGENT SWARM (12 Agents)
+# ═══════════════════════════════════════════════════════════════
+
+services:
+  # ─────────────────────────────────────────────────────────────
+  # MARKET DATA AGENT (Curator) 📡 - Port 3021
+  # FOUNDATIONAL - All other agents depend on clean data from here
+  # ─────────────────────────────────────────────────────────────
+  data-agent:
+    build: ./data-agent
+    container_name: forex_agent_data
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - ORCHESTRATOR_URL=http://orchestrator-agent:8000
+      - QUALITY_THRESHOLD=0.7
+      - SYMBOL_SUFFIX=${SYMBOL_SUFFIX:-.s}  # Broker symbol suffix (e.g., ".s" for JustMarkets)
+      - TIMESCALE_URL=postgresql://forex:forex_trading_2026@timescaledb:5432/market_data
+    ports:
+      - "3021:8000"
+    volumes:
+      - ./data-agent/workspace:/app/workspace
+      - ~/Library/Application Support/net.metaquotes.wine.metatrader5/drive_c/users/user/AppData/Roaming/MetaQuotes/Terminal/Common/Files:/app/mt5_data:ro
+    networks:
+      - agent-network
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+
+  # ─────────────────────────────────────────────────────────────
+  # NEWS AGENT (Sentinel) 📰 - Port 3010
+  # Event risk monitoring, calendar tracking, trading windows
+  # ─────────────────────────────────────────────────────────────
+  news-agent:
+    build: ./news-agent
+    container_name: forex_agent_news
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - ORCHESTRATOR_URL=http://orchestrator-agent:8000
+      - MT5_DATA_PATH=/app/mt5_data
+    ports:
+      - "3010:8000"
+    volumes:
+      - ./news-agent/workspace:/app/workspace
+      - ~/Library/Application Support/net.metaquotes.wine.metatrader5/drive_c/users/user/AppData/Roaming/MetaQuotes/Terminal/Common/Files:/app/mt5_data:ro
+    networks:
+      - agent-network
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ─────────────────────────────────────────────────────────────
+  # MACRO AGENT (Oracle) 🏛️ - Port 3011
+  # Sends analysis to Orchestrator
+  # ─────────────────────────────────────────────────────────────
+  macro-agent:
+    build: ./macro-agent
+    container_name: forex_agent_macro
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - ORCHESTRATOR_URL=http://orchestrator-agent:8000
+      - FRED_API_KEY=${FRED_API_KEY}
+    ports:
+      - "3011:8000"
+    volumes:
+      - ./macro-agent/workspace:/app/workspace
+    networks:
+      - agent-network
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ─────────────────────────────────────────────────────────────
+  # TECHNICAL AGENT (Atlas Jr.) 📊 - Port 3012
+  # Gets data from Curator, sends analysis to Orchestrator
+  # ─────────────────────────────────────────────────────────────
+  technical-agent:
+    build: ./technical-agent
+    container_name: forex_agent_technical
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - CURATOR_URL=http://data-agent:8000
+      - ORCHESTRATOR_URL=http://orchestrator-agent:8000
+    ports:
+      - "3012:8000"
+    volumes:
+      - ./technical-agent/workspace:/app/workspace
+    networks:
+      - agent-network
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - data-agent
+
+  # ─────────────────────────────────────────────────────────────
+  # RISK AGENT (Guardian) 🛡️ - Port 3013
+  # Position sizing, risk limits, exposure management, kill switches
+  # HIGHEST AUTHORITY AFTER ORCHESTRATOR
+  # ─────────────────────────────────────────────────────────────
+  risk-agent:
+    build: ./risk-agent
+    container_name: forex_agent_risk
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - REGIME_URL=http://regime-agent:8000
+      - ORCHESTRATOR_URL=http://orchestrator-agent:8000
+      - MT5_FILES_PATH=/mt5files
+    ports:
+      - "3013:8000"
+    volumes:
+      - ./risk-agent/workspace:/app/workspace
+      - ~/Library/Application Support/net.metaquotes.wine.metatrader5/drive_c/users/user/AppData/Roaming/MetaQuotes/Terminal/Common/Files:/mt5files:ro
+    networks:
+      - agent-network
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - regime-agent
+
+  # ─────────────────────────────────────────────────────────────
+  # STRUCTURE AGENT (Architect) 🏗️ - Port 3014
+  # Gets data from Curator, sends analysis to Orchestrator
+  # ─────────────────────────────────────────────────────────────
+  structure-agent:
+    build: ./structure-agent
+    container_name: forex_agent_structure
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - CURATOR_URL=http://data-agent:8000
+      - ORCHESTRATOR_URL=http://orchestrator-agent:8000
+    ports:
+      - "3014:8000"
+    volumes:
+      - ./structure-agent/workspace:/app/workspace
+    networks:
+      - agent-network
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - data-agent
+
+  # ─────────────────────────────────────────────────────────────
+  # SENTIMENT AGENT (Pulse) 💓 - Port 3015
+  # Market sentiment, positioning, contrarian analysis
+  # ─────────────────────────────────────────────────────────────
+  sentiment-agent:
+    build: ./sentiment-agent
+    container_name: forex_agent_sentiment
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - ORCHESTRATOR_URL=http://orchestrator-agent:8000
+      - MYFXBOOK_EMAIL=${MYFXBOOK_EMAIL}
+      - MYFXBOOK_PASSWORD=${MYFXBOOK_PASSWORD}
+    ports:
+      - "3015:8000"
+    volumes:
+      - ./sentiment-agent/workspace:/app/workspace
+    networks:
+      - agent-network
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ─────────────────────────────────────────────────────────────
+  # REGIME AGENT (Compass) 🧭 - Port 3016
+  # Market regime classification, strategy gating
+  # ─────────────────────────────────────────────────────────────
+  regime-agent:
+    build: ./regime-agent
+    container_name: forex_agent_regime
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - CURATOR_URL=http://data-agent:8000
+      - NEWS_URL=http://news-agent:8000
+      - ORCHESTRATOR_URL=http://orchestrator-agent:8000
+    ports:
+      - "3016:8000"
+    volumes:
+      - ./regime-agent/workspace:/app/workspace
+    networks:
+      - agent-network
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - data-agent
+      - news-agent
+
+  # ─────────────────────────────────────────────────────────────
+  # STRATEGY AGENT (Tactician) ♟️ - Port 3017
+  # Strategy template matching, qualification, and selection
+  # ─────────────────────────────────────────────────────────────
+  strategy-agent:
+    build: ./strategy-agent
+    container_name: forex_agent_strategy
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - CURATOR_URL=http://data-agent:8000
+      - TECHNICAL_URL=http://technical-agent:8000
+      - STRUCTURE_URL=http://structure-agent:8000
+      - MACRO_URL=http://macro-agent:8000
+      - NEWS_URL=http://news-agent:8000
+      - SENTIMENT_URL=http://sentiment-agent:8000
+      - REGIME_URL=http://regime-agent:8000
+      - ORCHESTRATOR_URL=http://orchestrator-agent:8000
+    ports:
+      - "3017:8000"
+    volumes:
+      - ./strategy-agent/workspace:/app/workspace
+    networks:
+      - agent-network
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - data-agent
+      - technical-agent
+      - structure-agent
+      - macro-agent
+      - news-agent
+      - sentiment-agent
+      - regime-agent
+
+  # ─────────────────────────────────────────────────────────────
+  # PORTFOLIO AGENT (Balancer) ⚖️ - Port 3018
+  # Currency-level exposure, theme analysis, concentration detection
+  # ─────────────────────────────────────────────────────────────
+  portfolio-agent:
+    build: ./portfolio-agent
+    container_name: forex_agent_portfolio
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - ORCHESTRATOR_URL=http://orchestrator-agent:8000
+    ports:
+      - "3018:8000"
+    volumes:
+      - ./portfolio-agent/workspace:/app/workspace
+    networks:
+      - agent-network
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ─────────────────────────────────────────────────────────────
+  # EXECUTION AGENT (Executor) ⚡ - Port 3019
+  # Trade execution, broker interface, order management
+  # MOST DANGEROUS AGENT - MAXIMUM SAFETY
+  # ─────────────────────────────────────────────────────────────
+  execution-agent:
+    build: ./execution-agent
+    container_name: forex_agent_execution
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - GUARDIAN_URL=http://risk-agent:8000
+      - PORTFOLIO_URL=http://portfolio-agent:8000
+      - ORCHESTRATOR_URL=http://orchestrator-agent:8000
+      - EXECUTION_MODE=${EXECUTION_MODE:-paper}
+      - LIVE_MODE_CONFIRMED=${LIVE_MODE_CONFIRMED:-false}
+      - MT5_FILES_PATH=/mt5files
+      - SYMBOL_SUFFIX=${SYMBOL_SUFFIX:-.s}  # Broker symbol suffix (e.g., ".s" for JustMarkets)
+    ports:
+      - "3019:8000"
+    volumes:
+      - ./execution-agent/workspace:/app/workspace
+      - ~/Library/Application Support/net.metaquotes.wine.metatrader5/drive_c/users/user/AppData/Roaming/MetaQuotes/Terminal/Common/Files:/mt5files
+    networks:
+      - agent-network
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - risk-agent
+      - portfolio-agent
+
+  # ─────────────────────────────────────────────────────────────
+  # JOURNAL AGENT (Chronicle) 📔 - Port 3022
+  # Trade journaling, review, lessons learned
+  # ─────────────────────────────────────────────────────────────
+  journal-agent:
+    build: ./journal-agent
+    container_name: forex_agent_journal
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - ORCHESTRATOR_URL=http://orchestrator-agent:8000
+    ports:
+      - "3022:8000"
+    volumes:
+      - ./journal-agent/workspace:/app/workspace
+    networks:
+      - agent-network
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ─────────────────────────────────────────────────────────────
+  # ANALYTICS AGENT (Insight) 📈 - Port 3023
+  # Performance analytics, edge detection, statistical analysis
+  # ─────────────────────────────────────────────────────────────
+  analytics-agent:
+    build: ./analytics-agent
+    container_name: forex_agent_analytics
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - JOURNAL_URL=http://journal-agent:8000
+      - ORCHESTRATOR_URL=http://orchestrator-agent:8000
+    ports:
+      - "3023:8000"
+    volumes:
+      - ./analytics-agent/workspace:/app/workspace
+    networks:
+      - agent-network
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - journal-agent
+
+  # ─────────────────────────────────────────────────────────────
+  # GOVERNANCE AGENT (Arbiter) ⚖️ - Port 3024
+  # Model governance, version control, overfit detection
+  # ─────────────────────────────────────────────────────────────
+  governance-agent:
+    build: ./governance-agent
+    container_name: forex_agent_governance
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - ORCHESTRATOR_URL=http://orchestrator-agent:8000
+    ports:
+      - "3024:8000"
+    volumes:
+      - ./governance-agent/workspace:/app/workspace
+    networks:
+      - agent-network
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ─────────────────────────────────────────────────────────────
+  # ORCHESTRATOR (Nexus) 🎯 - Port 3020
+  # ─────────────────────────────────────────────────────────────
+  orchestrator-agent:
+    build: ./orchestrator-agent
+    container_name: forex_agent_orchestrator
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - REDIS_URL=redis://redis:6379
+      - SYMBOL_SUFFIX=${SYMBOL_SUFFIX:-.s}  # Broker symbol suffix
+      - AUTO_START_WORKFLOWS=true  # Enable automatic scan loop
+    ports:
+      - "3020:8000"
+    volumes:
+      - ./orchestrator-agent/workspace:/app/workspace
+      - ../docs:/app/docs:ro  # Documentation mount
+    networks:
+      - agent-network
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - redis
+
+  # ─────────────────────────────────────────────────────────────
+  # CENTRAL DASHBOARD 📊 - Port 3001
+  # Polished UI aggregating all agent data
+  # ─────────────────────────────────────────────────────────────
+  dashboard:
+    build: ../dashboard
+    container_name: forex_dashboard
+    ports:
+      - "3001:3000"
+    networks:
+      - agent-network
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ─────────────────────────────────────────────────────────────
+  # Redis for inter-agent communication
+  # ─────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: forex_agent_redis
+    ports:
+      - "6380:6379"
+    networks:
+      - agent-network
+    restart: unless-stopped
+
+  # ─────────────────────────────────────────────────────────────
+  # TimescaleDB for time-series market data storage
+  # Used by Curator for persistent candle/tick data
+  # ─────────────────────────────────────────────────────────────
+  timescaledb:
+    image: timescale/timescaledb:latest-pg15
+    container_name: forex_timescaledb
+    environment:
+      - POSTGRES_USER=forex
+      - POSTGRES_PASSWORD=forex_trading_2026
+      - POSTGRES_DB=market_data
+    ports:
+      - "5433:5432"
+    volumes:
+      - timescaledb_data:/var/lib/postgresql/data
+    networks:
+      - agent-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U forex -d market_data"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  timescaledb_data:
+
+networks:
+  agent-network:
+    driver: bridge

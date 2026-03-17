@@ -1,0 +1,89 @@
+# ================================================================================
+# PROMOTION GATES: PAPER TO LIVE
+# ================================================================================
+# Live trading MUST be disabled by default and only enabled when ALL gates pass.
+# This is a critical safety mechanism.
+
+# ================================================================================
+# PAPER TRADING GATES
+# ================================================================================
+paper_trading:
+  # Minimum number of paper trades before live can be considered
+  minimum_trades: 100
+  
+  # Minimum days of paper trading
+  minimum_days: 30
+  
+  # Minimum profit factor (gross profits / gross losses)
+  minimum_profit_factor: 1.3
+  
+  # Maximum drawdown allowed during paper period
+  maximum_drawdown_pct: 5.0
+  
+  # Minimum win rate (wins / total trades)
+  minimum_win_rate: 0.40
+  
+  # Minimum average risk:reward achieved
+  minimum_avg_rr: 1.5
+
+# ================================================================================
+# SYSTEM GATES
+# ================================================================================
+system:
+  # Minimum system uptime before live
+  minimum_uptime_days: 14
+  
+  # Maximum slippage deviation from expected
+  maximum_slippage_deviation: 1.0
+  
+  # No critical incidents in recent period
+  no_critical_incidents: true
+  critical_incident_lookback_days: 7
+
+# ================================================================================
+# SHADOW LIVE GATES
+# ================================================================================
+# Shadow live = full system running, all signals logged, but no real orders
+shadow_live:
+  # Minimum shadow trades before actual live
+  minimum_trades: 50
+  
+  # Correlation between shadow results and what paper would have achieved
+  shadow_vs_paper_correlation: 0.80
+
+# ================================================================================
+# FINAL APPROVAL
+# ================================================================================
+final:
+  # Even after all gates pass, require explicit operator approval
+  operator_explicit_approval: true
+  
+  # Require confirmation of risk acknowledgment
+  risk_acknowledgment_required: true
+  
+  # Initial live trading with reduced size
+  initial_live_risk_multiplier: 0.50
+  initial_live_period_days: 7
+
+# ================================================================================
+# AUTO-DEMOTION TRIGGERS
+# ================================================================================
+# If any of these occur after promotion to live, AUTO-DEMOTE back to paper
+auto_demotion:
+  # Drawdown exceeds this percentage
+  drawdown_breach_pct: 5.0
+  
+  # Profit factor drops below this
+  profit_factor_below: 1.0
+  
+  # Win rate drops below this
+  win_rate_below: 0.30
+  
+  # Consecutive losing trades
+  consecutive_losses: 5
+  
+  # Critical system incidents
+  critical_incidents: true
+  
+  # MT5 disconnection longer than this
+  mt5_disconnection_minutes: 15
