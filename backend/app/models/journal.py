@@ -4,7 +4,7 @@ Journal Models - Trade journal entries and rejected trade records.
 from datetime import datetime
 from decimal import Decimal
 from typing import Optional
-from sqlalchemy import String, Boolean, Text, ForeignKey, Index
+from sqlalchemy import String, Boolean, Text, ForeignKey, Index, text
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -87,7 +87,7 @@ class TradeJournal(Base):
     reviewed_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
     
     __table_args__ = (
-        Index("ix_trade_journal_lookup", "symbol", created_at.desc()),
+        Index("ix_trade_journal_lookup", "symbol", text("created_at DESC")),
     )
 
 

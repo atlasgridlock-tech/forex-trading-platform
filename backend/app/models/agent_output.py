@@ -4,7 +4,7 @@ Agent Output Models - Storage for all agent analysis results.
 from datetime import datetime
 from decimal import Decimal
 from typing import Optional
-from sqlalchemy import String, Integer, Index
+from sqlalchemy import String, Integer, Index, text
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -45,7 +45,7 @@ class AgentOutput(Base):
     duration_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     
     __table_args__ = (
-        Index("ix_agent_outputs_lookup", "agent_name", "symbol", created_at.desc()),
+        Index("ix_agent_outputs_lookup", "agent_name", "symbol", text("created_at DESC")),
         Index("ix_agent_outputs_gin_payload", "payload", postgresql_using="gin"),
     )
 
