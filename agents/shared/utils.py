@@ -204,18 +204,23 @@ async def fetch_json(url: str, timeout: float = 5.0) -> Optional[dict]:
     """Fetch JSON from URL with error handling using pooled client."""
     try:
         from .performance import pooled_get
-        return await pooled_get(url, timeout=timeout)
+        result = await pooled_get(url, timeout=timeout)
+        if result is not None:
+            return result
     except ImportError:
-        # Fallback if performance module not available
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(url, timeout=timeout)
-                if response.status_code == 200:
-                    return response.json()
-        except:
-            pass
-    except Exception:
         pass
+    except Exception as e:
+        print(f"[fetch_json] Pooled fetch error: {e}")
+    
+    # Fallback to direct client
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, timeout=timeout)
+            if response.status_code == 200:
+                return response.json()
+    except Exception as e:
+        print(f"[fetch_json] Direct fetch error: {e}")
+    
     return None
 
 

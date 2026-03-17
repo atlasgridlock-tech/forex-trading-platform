@@ -149,6 +149,27 @@ curl -X POST http://localhost:3020/api/evaluate \
 ## Remaining Work
 1. Connect Real MT5 Bridge (after user readiness)
 
+## Functional Test Results ✅ (December 2025)
+
+Full end-to-end functional testing completed successfully:
+
+| Component | Status | Details |
+|-----------|--------|---------|
+| Agents Online | ✅ 14/14 | All microservices running |
+| Market Data | ✅ | Live data ingestion working |
+| Technical Analysis | ✅ | Atlas Jr. returning grades/bias |
+| Structure Analysis | ✅ | Architect detecting market structure |
+| Regime Detection | ✅ | Compass identifying trending regime |
+| Confluence Scoring | ✅ | Weighted scoring functional |
+| Trade Execution | ✅ | Paper trades executing correctly |
+| Position Lifecycle | ✅ | TP/SL management active |
+| Risk Management | ✅ | Guardian in normal mode |
+
+### Bug Fixes During Testing
+- Fixed HTTP/2 issue in pooled client (disabled http2=True)
+- Added dotenv loading to orchestrator for localhost URLs
+- Fixed fetch_json fallback to direct client on pooled errors
+
 ## Documentation Complete ✅ (December 2025)
 
 ### Documents Created
