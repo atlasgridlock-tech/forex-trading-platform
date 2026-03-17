@@ -189,22 +189,25 @@ async def system_status():
 @app.get("/api/account")
 async def get_account():
     """Get account information."""
+    from app.services.trading_manager import get_account_state
+    account = get_account_state()
     return {
-        "balance": 10000.0,
-        "equity": 10000.0,
-        "margin": 0.0,
-        "free_margin": 10000.0,
+        "balance": account.get("balance", 10000.0),
+        "equity": account.get("equity", 10000.0),
+        "margin": account.get("margin_used", 0.0),
+        "free_margin": account.get("free_margin", 10000.0),
         "margin_level": None,
-        "realized_pnl_today": 0.0,
-        "unrealized_pnl": 0.0,
-        "current_drawdown_pct": 0.0,
+        "realized_pnl_today": account.get("realized_pnl_today", 0.0),
+        "unrealized_pnl": account.get("unrealized_pnl", 0.0),
+        "current_drawdown_pct": account.get("current_drawdown_pct", 0.0),
     }
 
 
 @app.get("/api/positions")
 async def get_positions():
     """Get open positions."""
-    return []
+    from app.services.trading_manager import get_open_positions
+    return get_open_positions()
 
 
 @app.get("/api/trades/recent")

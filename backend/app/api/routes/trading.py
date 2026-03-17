@@ -2,12 +2,21 @@
 Trading API Routes
 
 Endpoints for trade execution, position management, and system control.
+Now integrated with the paper trading service.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any
 from fastapi import APIRouter, HTTPException, Depends, Body
 from pydantic import BaseModel, Field
+
+from app.services.trading_manager import (
+    execute_market_trade,
+    close_position,
+    get_open_positions,
+    get_account_state,
+    modify_position,
+)
 
 router = APIRouter(prefix="/api/trading", tags=["trading"])
 
@@ -18,13 +27,13 @@ router = APIRouter(prefix="/api/trading", tags=["trading"])
 
 class TradeRequest(BaseModel):
     """Trade execution request."""
-    symbol: str
-    direction: str = Field(..., pattern="^(long|short)$")
-    volume: float = Field(..., gt=0, le=1.0)
-    stop_loss: float = Field(..., gt=0)
-    take_profit: Optional[float] = None
+    symbol: str = Field(..., description="Trading symbol (e.g., EURUSD)")
+    direction: str = Field(..., pattern="^(long|short)$", description="Trade direction")
+    volume: float = Field(..., gt=0, le=10.0, description="Position size in lots")
+    stop_loss: float = Field(..., gt=0, description="Stop loss price (REQUIRED)")
+    take_profit: Optional[float] = Field(None, gt=0, description="Take profit price")
+    entry_price: Optional[float] = Field(None, gt=0, description="Entry price (optional, uses market)")
     order_type: str = Field(default="market", pattern="^(market|limit|stop)$")
-    price: Optional[float] = None
     comment: Optional[str] = None
 
 
@@ -32,6 +41,7 @@ class ClosePositionRequest(BaseModel):
     """Position close request."""
     ticket: int
     volume: Optional[float] = None  # Partial close
+    current_price: Optional[float] = None
     reason: Optional[str] = None
 
 
@@ -68,13 +78,17 @@ class KillSwitchAction(BaseModel):
 @router.get("/status")
 async def get_trading_status():
     """Get current trading system status."""
-    # Would get from injected service
+    account = get_account_state()
+    positions = get_open_positions()
+    
     return {
         "mode": "paper",
         "kill_switch_active": False,
-        "open_positions": 0,
-        "daily_pnl": 0.0,
-        "daily_trades": 0,
+        "open_positions": len(positions),
+        "daily_pnl": account.get("realized_pnl_today", 0.0),
+        "daily_trades": 0,  # Would track from history
+        "equity": account.get("equity", 10000.0),
+        "balance": account.get("balance", 10000.0),
     }
 
 
@@ -97,42 +111,97 @@ async def execute_trade(request: TradeRequest):
     """
     Execute a trade.
     
-    This endpoint goes through all safety checks before execution.
+    This endpoint performs safety checks and executes on the paper trading service.
+    
+    Required:
+    - symbol: Trading pair (e.g., EURUSD)
+    - direction: 'long' or 'short'
+    - volume: Position size in lots (max 10.0)
+    - stop_loss: Stop loss price (MANDATORY)
+    
+    Optional:
+    - take_profit: Take profit price
+    - entry_price: Entry price (if not provided, uses simulated market price)
     """
-    # Validate stop loss exists (redundant but explicit)
-    if not request.stop_loss or request.stop_loss <= 0:
+    # Execute the trade
+    result = execute_market_trade(
+        symbol=request.symbol,
+        direction=request.direction,
+        volume=request.volume,
+        stop_loss=request.stop_loss,
+        take_profit=request.take_profit,
+        entry_price=request.entry_price,
+    )
+    
+    if not result.success:
         raise HTTPException(
             status_code=400,
-            detail="Stop loss is REQUIRED for all trades"
+            detail=result.error or "Trade execution failed"
         )
     
-    # Would call live_trading_service.execute_trade()
     return {
         "success": True,
-        "receipt_id": f"EXEC-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
-        "mode": "paper",
-        "message": "Trade executed on paper trading",
+        "receipt_id": result.receipt_id,
+        "mode": result.mode,
+        "ticket": result.ticket,
+        "symbol": result.symbol,
+        "direction": result.direction,
+        "volume": result.volume,
+        "entry_price": result.entry_price,
+        "stop_loss": result.stop_loss,
+        "take_profit": result.take_profit,
+        "slippage_pips": result.slippage_pips,
+        "message": f"Trade executed: {result.direction.upper()} {result.volume} {result.symbol} @ {result.entry_price}",
+        "warnings": result.warnings,
     }
 
 
 @router.post("/close")
-async def close_position(request: ClosePositionRequest):
+async def close_position_endpoint(request: ClosePositionRequest):
     """Close an open position."""
-    # Would call live_trading_service.close_position()
+    result = close_position(
+        ticket=request.ticket,
+        current_price=request.current_price,
+        volume=request.volume,
+    )
+    
+    if not result.get("success"):
+        raise HTTPException(
+            status_code=400,
+            detail=result.get("error", "Position close failed")
+        )
+    
     return {
         "success": True,
-        "ticket": request.ticket,
-        "message": "Position closed",
+        "ticket": result.get("ticket"),
+        "symbol": result.get("symbol"),
+        "direction": result.get("direction"),
+        "volume": result.get("volume"),
+        "exit_price": result.get("exit_price"),
+        "pnl": result.get("pnl"),
+        "message": f"Position {request.ticket} closed",
     }
 
 
 @router.post("/modify")
-async def modify_position(request: ModifyPositionRequest):
+async def modify_position_endpoint(request: ModifyPositionRequest):
     """Modify an open position's SL/TP."""
     if not request.stop_loss and not request.take_profit:
         raise HTTPException(
             status_code=400,
             detail="Must specify stop_loss or take_profit to modify"
+        )
+    
+    result = modify_position(
+        ticket=request.ticket,
+        new_stop_loss=request.stop_loss,
+        new_take_profit=request.take_profit,
+    )
+    
+    if not result.get("success"):
+        raise HTTPException(
+            status_code=400,
+            detail=result.get("error", "Position modification failed")
         )
     
     return {
@@ -149,12 +218,23 @@ async def emergency_close_all(authorized_by: str = Body(..., embed=True)):
     
     ⚠️ This will close ALL open positions immediately.
     """
-    # Would call live_trading_service.emergency_close_all()
+    positions = get_open_positions()
+    closed_count = 0
+    errors = []
+    
+    for pos in positions:
+        result = close_position(ticket=pos["ticket"])
+        if result.get("success"):
+            closed_count += 1
+        else:
+            errors.append(f"Ticket {pos['ticket']}: {result.get('error')}")
+    
     return {
-        "success": True,
-        "message": "Emergency close initiated",
+        "success": len(errors) == 0,
+        "message": f"Emergency close: {closed_count}/{len(positions)} positions closed",
         "authorized_by": authorized_by,
-        "closed_positions": 0,
+        "closed_positions": closed_count,
+        "errors": errors if errors else None,
     }
 
 
@@ -165,13 +245,36 @@ async def emergency_close_all(authorized_by: str = Body(..., embed=True)):
 @router.get("/positions")
 async def get_positions():
     """Get all open positions."""
-    return []
+    return get_open_positions()
 
 
 @router.get("/positions/{ticket}")
 async def get_position(ticket: int):
     """Get a specific position."""
-    raise HTTPException(status_code=404, detail="Position not found")
+    positions = get_open_positions()
+    for pos in positions:
+        if pos["ticket"] == ticket:
+            return pos
+    raise HTTPException(status_code=404, detail=f"Position {ticket} not found")
+
+
+@router.post("/positions/{ticket}/close")
+async def close_position_by_ticket(ticket: int):
+    """Close a position by ticket number."""
+    result = close_position(ticket=ticket)
+    
+    if not result.get("success"):
+        raise HTTPException(
+            status_code=400,
+            detail=result.get("error", "Position close failed")
+        )
+    
+    return {
+        "success": True,
+        "ticket": ticket,
+        "pnl": result.get("pnl"),
+        "message": f"Position {ticket} closed",
+    }
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -181,20 +284,26 @@ async def get_position(ticket: int):
 @router.get("/promotion/status")
 async def get_promotion_status():
     """Check promotion gate status for live trading."""
-    # Would call live_trading_service.check_promotion_gates()
+    # Get current metrics from paper trading
+    account = get_account_state()
+    positions = get_open_positions()
+    
     return {
         "ready_for_live": False,
-        "gates_passed": 0,
+        "gates_passed": 1,  # Drawdown passes by default
         "gates_total": 7,
         "gates": [
             {"gate": "min_trades", "required": 100, "actual": 0, "passed": False},
             {"gate": "min_days", "required": 30, "actual": 0, "passed": False},
             {"gate": "profit_factor", "required": 1.3, "actual": 0, "passed": False},
-            {"gate": "max_drawdown", "required": "≤5.0%", "actual": "0.0%", "passed": True},
+            {"gate": "max_drawdown", "required": "≤5.0%", "actual": f"{account.get('current_drawdown_pct', 0):.1f}%", "passed": account.get('current_drawdown_pct', 0) <= 5.0},
             {"gate": "win_rate", "required": "≥40%", "actual": "0%", "passed": False},
             {"gate": "avg_rr", "required": "≥1.5", "actual": 0, "passed": False},
             {"gate": "manual_approval", "required": "Required", "actual": "Not approved", "passed": False},
         ],
+        "current_balance": account.get("balance", 10000),
+        "current_equity": account.get("equity", 10000),
+        "open_positions": len(positions),
     }
 
 
@@ -205,9 +314,8 @@ async def request_live_mode(request: LiveModeRequest):
     
     This creates a formal request that must be manually approved.
     """
-    # Would call live_trading_service.request_live_mode()
     return {
-        "request_id": f"LIVE-REQ-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
+        "request_id": f"LIVE-REQ-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
         "status": "gates_not_met",
         "message": "Promotion gates not yet passed. Continue paper trading.",
     }
@@ -220,7 +328,6 @@ async def approve_live_mode(approval: LiveModeApproval):
     
     ⚠️ This enables REAL MONEY trading.
     """
-    # Would call live_trading_service.approve_live_mode()
     return {
         "success": False,
         "error": "Promotion gates not met",
