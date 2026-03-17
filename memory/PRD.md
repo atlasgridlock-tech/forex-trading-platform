@@ -3,6 +3,17 @@
 ## Original Problem Statement
 User requested to analyze, debug, and fix a multi-agent forex trading platform. The system is designed as a microservices swarm with approximately 15 FastAPI-based agents, each handling a specific domain of trading logic.
 
+## Documentation
+
+### Quick Links
+- **[How It Works - Complete Guide](/app/docs/HOW_IT_WORKS.md)** - Full A-Z system documentation
+- **[Agent Directory](/app/docs/AGENTS_DIRECTORY.md)** - Quick reference for all agents
+- **[Agent Data Reference](/app/docs/Agent_Data_Reference.md)** - Data sources and formats
+- **[Shared Module Guide](/app/agents/shared/README.md)** - Common code library
+- **[Orchestrator README](/app/agents/orchestrator-agent/README.md)** - Central coordinator
+- **[Data Agent README](/app/agents/data-agent/README.md)** - Market data hub
+- **[Execution Agent README](/app/agents/execution-agent/README.md)** - Trade execution
+
 ## System Architecture
 - **Location:** `/app/agents/`
 - **Design:** Docker Compose-based (running manually without Docker)
@@ -134,8 +145,42 @@ curl -X POST http://localhost:3020/api/evaluate \
 ```
 
 ## Remaining Work
-1. **P3:** Extended documentation (optional)
-2. Connect Real MT5 Bridge (after user readiness)
+1. Connect Real MT5 Bridge (after user readiness)
+
+## Documentation Complete ✅ (December 2025)
+
+### Documents Created
+- **[HOW_IT_WORKS.md](/app/docs/HOW_IT_WORKS.md)** - Complete A-Z system guide covering:
+  - Executive summary
+  - System architecture overview
+  - Trading flow from data to trade
+  - Agent swarm architecture
+  - Data pipeline documentation
+  - Decision making process
+  - Trade execution & lifecycle
+  - Risk management
+  - Performance optimization
+  - Running instructions
+  - Monitoring & debugging
+  - Configuration reference
+
+- **[AGENTS_DIRECTORY.md](/app/docs/AGENTS_DIRECTORY.md)** - Quick reference for all 14 agents with:
+  - Port numbers
+  - Key endpoints
+  - Primary outputs
+  - Data flows
+
+- **[README.md](/app/README.md)** - Updated main README with:
+  - Quick start guide
+  - Architecture diagram
+  - API examples
+  - Configuration reference
+
+- **Agent READMEs**:
+  - `/app/agents/orchestrator-agent/README.md` - Nexus documentation
+  - `/app/agents/data-agent/README.md` - Curator documentation
+  - `/app/agents/execution-agent/README.md` - Executor documentation
+  - `/app/agents/shared/README.md` - Shared module reference
 
 ## Performance Optimization ✅ (December 2025)
 
