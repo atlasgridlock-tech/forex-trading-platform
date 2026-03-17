@@ -125,6 +125,12 @@ class BaseAgent(ABC):
         self.pubsub: Optional[redis.client.PubSub] = None
         self.running = False
         
+        # Compatibility fields used by concrete agents
+        self.is_initialized = True
+        self.is_running = False
+        self._start_time = datetime.utcnow()
+        self._logger = logger  # Use module-level logger
+        
         # Agent state
         self.state: Dict[str, Any] = {
             "status": "initializing",
@@ -161,6 +167,27 @@ When analyzing, structure your response as:
 3. CONFIDENCE (low/medium/high)
 4. RECOMMENDED ACTION (for the orchestrator)
 """
+    
+    def _create_message(
+        self,
+        message_type: str,
+        payload: Dict[str, Any],
+        to_agent: str = "orchestrator",
+        correlation_id: str = None,
+    ) -> AgentMessage:
+        """Create a standardized agent message."""
+        return AgentMessage(
+            from_agent=self.agent_id,
+            to_agent=to_agent,
+            message_type=message_type,
+            payload=payload,
+            timestamp=datetime.utcnow(),
+            correlation_id=correlation_id,
+        )
+    
+    def _get_uptime_seconds(self) -> float:
+        """Get agent uptime in seconds."""
+        return (datetime.utcnow() - self._start_time).total_seconds()
     
     async def connect(self):
         """Connect to Redis."""
