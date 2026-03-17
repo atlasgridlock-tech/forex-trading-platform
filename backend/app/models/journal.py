@@ -119,5 +119,5 @@ class RejectedTrade(Base):
     would_have_been_profitable: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
     
     __table_args__ = (
-        Index("ix_rejected_trades_lookup", "symbol", timestamp.desc()),
+        Index("ix_rejected_trades_lookup", "symbol", text("timestamp DESC")),
     )
