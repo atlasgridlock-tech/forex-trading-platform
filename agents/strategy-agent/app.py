@@ -659,48 +659,55 @@ async def evaluate_strategies(symbol: str) -> dict:
     curator_data = await fetch_json(f"{CURATOR_URL}/api/snapshot/symbol/{symbol}")
     market_data = await fetch_json(f"{CURATOR_URL}/api/market")  # For current prices
     
-    # Extract key values
+    # Extract key values with robust null handling
+    # (handles cases where key exists but value is None)
     regime = regime_data.get("primary_regime", "unknown") if regime_data else "unknown"
     trend_grade = technical_data.get("trend_grade", "D") if technical_data else "D"
     structure_quality = structure_data.get("confidence", 50) if structure_data else 50
     macro_bias = macro_data.get("pair_bias", "neutral") if macro_data else "neutral"
     sentiment_class = sentiment_data.get("classification", "neutral") if sentiment_data else "neutral"
-    retail_long = sentiment_data.get("retail_positioning", {}).get("long_pct", 50) if sentiment_data else 50
+    # Safe nested access - handle None values
+    retail_positioning = (sentiment_data.get("retail_positioning") or {}) if sentiment_data else {}
+    retail_long = retail_positioning.get("long_pct", 50)
     news_mode = news_data.get("mode", "normal") if news_data else "normal"
     
     # Get price from market data (more reliable than snapshot)
-    symbol_market = market_data.get(symbol, {}) if market_data else {}
+    symbol_market = (market_data.get(symbol) or {}) if market_data else {}
     price = symbol_market.get("price", 1.0)
-    spread = symbol_market.get("spread", curator_data.get("spread_pips", 1.0) if curator_data else 1.0)
-    atr = curator_data.get("atr", 0.001) if curator_data else 0.001
-    session = curator_data.get("session", "London") if curator_data else "London"
+    curator_spread = (curator_data.get("spread_pips") or 1.0) if curator_data else 1.0
+    spread = symbol_market.get("spread") or curator_spread
+    atr = (curator_data.get("atr") or 0.001) if curator_data else 0.001
+    session = (curator_data.get("session") or "London") if curator_data else "London"
     
     # Estimate ATR percentage (vs typical)
     atr_pct = 50  # Default
-    if technical_data and technical_data.get("indicators", {}).get("atr"):
+    tech_indicators = (technical_data.get("indicators") or {}) if technical_data else {}
+    if tech_indicators.get("atr"):
         atr_pct = 50  # Would calculate vs historical
     
     # Get technical direction and RSI from Atlas Jr.
     technical_direction = "neutral"
     rsi = 50.0  # Default neutral
     h1_atr = 0.001  # Default
+    ema21 = 0  # Initialize EMAs outside the if block
+    ema50 = 0
     
     if technical_data:
         lean = technical_data.get("directional_lean", "neutral")
         if lean in ["bullish", "bearish"]:
             technical_direction = lean
         
-        # Get RSI from primary timeframe (H1)
-        timeframes = technical_data.get("timeframes", {})
-        h1_data = timeframes.get("H1", {})
-        h1_indicators = h1_data.get("indicators", {})
-        rsi = h1_indicators.get("rsi", 50.0)
-        h1_atr = h1_indicators.get("atr", 0.001)
+        # Get RSI from primary timeframe (H1) - safe nested access
+        timeframes = technical_data.get("timeframes") or {}
+        h1_data = timeframes.get("H1") or {}
+        h1_indicators = h1_data.get("indicators") or {}
+        rsi = h1_indicators.get("rsi") or 50.0
+        h1_atr = h1_indicators.get("atr") or 0.001
         
         # Get EMA values for pullback entries (EMAs are in separate field)
-        h1_emas = h1_data.get("emas", {})
-        ema21 = h1_emas.get("ema21", 0)
-        ema50 = h1_emas.get("ema50", 0)
+        h1_emas = h1_data.get("emas") or {}
+        ema21 = h1_emas.get("ema21") or 0
+        ema50 = h1_emas.get("ema50") or 0
     
     # Use H1 ATR for calculations (better than curator ATR)
     if h1_atr > 0:
@@ -709,8 +716,8 @@ async def evaluate_strategies(symbol: str) -> dict:
     # Add EMAs to structure_data for pullback calculations
     if structure_data is None:
         structure_data = {}
-    structure_data["ema21"] = ema21 if 'ema21' in dir() else 0
-    structure_data["ema50"] = ema50 if 'ema50' in dir() else 0
+    structure_data["ema21"] = ema21
+    structure_data["ema50"] = ema50
     
     # Determine if this is a cross pair (for spread tolerance)
     # Cross pairs don't contain USD (e.g., EURAUD, GBPJPY, AUDNZD)
@@ -978,7 +985,7 @@ async def send_to_orchestrator(symbol: str, analysis: dict):
             "timestamp": datetime.utcnow().isoformat(),
             "data": {
                 "symbol": symbol,
-                "direction": analysis.get("entry_parameters", {}).get("direction", "NEUTRAL"),
+                "direction": ((analysis.get("entry_parameters") or {}).get("direction")) or "NEUTRAL",
                 "confidence": analysis["selected_strategy"]["score"] / 100,
                 "reason": f"{analysis['selected_strategy']['name']} ({analysis['selected_strategy']['score']}%)",
             },
@@ -1230,13 +1237,14 @@ async def get_setups(symbol: str):
     ema50 = 0
     
     if technical_data:
-        # Get ATR from primary timeframe indicators
-        primary_tf = technical_data.get("timeframes", {}).get("H1", {})
-        h1_indicators = primary_tf.get("indicators", {})
-        h1_emas = primary_tf.get("emas", {})  # EMAs in separate field
-        atr = h1_indicators.get("atr", 0.001)
-        ema21 = h1_emas.get("ema21", 0)
-        ema50 = h1_emas.get("ema50", 0)
+        # Get ATR from primary timeframe indicators - safe nested access
+        timeframes = technical_data.get("timeframes") or {}
+        primary_tf = timeframes.get("H1") or {}
+        h1_indicators = primary_tf.get("indicators") or {}
+        h1_emas = primary_tf.get("emas") or {}  # EMAs in separate field
+        atr = h1_indicators.get("atr") or 0.001
+        ema21 = h1_emas.get("ema21") or 0
+        ema50 = h1_emas.get("ema50") or 0
         if atr == 0 or atr is None:
             # Fallback: estimate from price
             atr = price * 0.005  # ~50 pips for majors
