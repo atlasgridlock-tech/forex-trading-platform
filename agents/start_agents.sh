@@ -8,6 +8,10 @@ set -e
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 echo "Script directory: $SCRIPT_DIR"
 
+# CRITICAL: Set PYTHONPATH so agents can find the shared module
+export PYTHONPATH="$SCRIPT_DIR:$PYTHONPATH"
+echo "PYTHONPATH: $PYTHONPATH"
+
 # Load environment from .env file (create one if it doesn't exist)
 ENV_FILE="$SCRIPT_DIR/.env"
 if [ -f "$ENV_FILE" ]; then
@@ -22,15 +26,23 @@ else
 # Forex Trading Platform Environment Variables
 ANTHROPIC_API_KEY=your_key_here
 QUALITY_THRESHOLD=0.7
-SYMBOL_SUFFIX=.s
-MT5_DATA_PATH=./mt5_data
+SYMBOL_SUFFIX=.ecn
 EOF
     echo "Please edit $ENV_FILE and add your API keys"
 fi
 
-# Set MT5 data path (relative to script directory or absolute)
-export MT5_DATA_PATH="${MT5_DATA_PATH:-$SCRIPT_DIR/../mt5_data}"
-mkdir -p "$MT5_DATA_PATH"
+# Set MT5 data path for Mac - MUST match what EA writes to
+# MT5 on Mac writes to: ~/Library/Application Support/net.metaquotes.wine.metatrader5/drive_c/users/user/AppData/Roaming/MetaQuotes/Terminal/Common/Files
+export MT5_DATA_PATH="$HOME/Library/Application Support/net.metaquotes.wine.metatrader5/drive_c/users/user/AppData/Roaming/MetaQuotes/Terminal/Common/Files"
+echo "MT5_DATA_PATH: $MT5_DATA_PATH"
+
+# Check if MT5 data directory exists
+if [ -d "$MT5_DATA_PATH" ]; then
+    echo "✅ MT5 data directory found"
+    ls -la "$MT5_DATA_PATH"/*.csv 2>/dev/null || echo "  (no CSV files yet)"
+else
+    echo "⚠️ MT5 data directory not found - make sure MT5 is running with the EA"
+fi
 
 # Function to start an agent
 start_agent() {
@@ -51,8 +63,8 @@ start_agent() {
     # Create workspace if needed
     mkdir -p workspace/memory
     
-    # Start agent in background
-    uvicorn app:app --host 0.0.0.0 --port $port &
+    # Start agent in background with PYTHONPATH set
+    PYTHONPATH="$SCRIPT_DIR:$PYTHONPATH" uvicorn app:app --host 0.0.0.0 --port $port &
     local pid=$!
     echo "  $name PID: $pid"
     
@@ -61,6 +73,7 @@ start_agent() {
 }
 
 # Kill any existing agents
+echo ""
 echo "Stopping any existing agents..."
 pkill -f "uvicorn app:app" 2>/dev/null || true
 sleep 2

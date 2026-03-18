@@ -49,11 +49,12 @@ ORCHESTRATOR_URL = get_agent_url("orchestrator")
 QUALITY_THRESHOLD = float(os.getenv("QUALITY_THRESHOLD", "0.7"))
 WORKSPACE = Path("/app/workspace")
 
-# MT5 data paths (mounted from host)
-MT5_DATA_PATH = Path("/app/mt5_data")
+# MT5 data paths - use environment variable or default
+MT5_DATA_PATH = Path(os.getenv("MT5_DATA_PATH", "/app/mt5_data"))
+print(f"[Curator] MT5 data path: {MT5_DATA_PATH}")
 CANDLE_FILE = MT5_DATA_PATH / "candle_data.csv"
 MARKET_FILE = MT5_DATA_PATH / "market_data.csv"
-ACCOUNT_FILE = MT5_DATA_PATH / "account_data.json"
+ACCOUNT_FILE = MT5_DATA_PATH / "account_data.csv"  # Changed to CSV to match EA output
 POSITIONS_FILE = MT5_DATA_PATH / "positions.json"
 BRIDGE_STATUS_FILE = MT5_DATA_PATH / "bridge_status.json"
 
@@ -1158,13 +1159,27 @@ async def get_account():
     if live_account_data:
         return live_account_data
     
-    # Fall back to file data
+    # Fall back to CSV file data (from EA)
     try:
         if ACCOUNT_FILE.exists():
-            with open(ACCOUNT_FILE, 'r') as f:
-                return json.load(f)
+            with open(ACCOUNT_FILE, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f, delimiter='\t')
+                for row in reader:
+                    return {
+                        "balance": float(row.get('Balance', 0)),
+                        "equity": float(row.get('Equity', 0)),
+                        "margin": float(row.get('Margin', 0)),
+                        "free_margin": float(row.get('FreeMargin', 0)),
+                        "leverage": int(row.get('Leverage', 0)),
+                        "currency": row.get('Currency', 'USD'),
+                        "profit": float(row.get('Profit', 0)),
+                        "server": row.get('Server', ''),
+                        "company": row.get('Company', ''),
+                        "source": "file"
+                    }
     except Exception as e:
-        return {"error": str(e)}
+        logger.error(f"Error reading account file: {e}")
+    
     return {"balance": 0, "equity": 0, "margin": 0, "free_margin": 0, "error": "No account data available"}
 
 
