@@ -1356,6 +1356,35 @@ async def update_config(new_config: dict):
     return {"status": "updated", "config": CONFIG}
 
 
+# Storage for agent data ingestion
+agent_data_store: Dict[str, List[dict]] = {}
+
+@app.post("/api/ingest")
+async def ingest_agent_data(data: dict):
+    """
+    Receive data from other agents.
+    This endpoint collects alerts, analysis results, and other outputs from all agents.
+    """
+    agent_id = data.get("agent_id", "unknown")
+    output_type = data.get("output_type", "unknown")
+    
+    # Store in memory (keep last 100 per agent)
+    if agent_id not in agent_data_store:
+        agent_data_store[agent_id] = []
+    
+    agent_data_store[agent_id].append({
+        "timestamp": data.get("timestamp", datetime.utcnow().isoformat()),
+        "type": output_type,
+        "data": data.get("data", {}),
+    })
+    
+    # Keep only last 100 entries per agent
+    if len(agent_data_store[agent_id]) > 100:
+        agent_data_store[agent_id] = agent_data_store[agent_id][-100:]
+    
+    return {"status": "ok", "agent_id": agent_id, "type": output_type}
+
+
 @app.get("/api/status")
 async def get_status():
     await fetch_all_agent_status()
