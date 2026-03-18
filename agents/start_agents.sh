@@ -1,6 +1,6 @@
 #!/bin/bash
 # Forex Trading Platform - Agent Launcher (Mac/Local Version)
-# Starts ALL agents for full functionality
+# Starts ALL agents for full functionality with health checks
 
 set -e
 
@@ -36,6 +36,28 @@ else
     echo "⚠️ MT5 data directory not found - make sure MT5 is running with the EA"
 fi
 
+# ═══════════════════════════════════════════════════════════════
+# HEALTH CHECK FUNCTION
+# ═══════════════════════════════════════════════════════════════
+wait_for_agent() {
+    local name=$1
+    local port=$2
+    local max_attempts=${3:-20}  # Default 20 attempts (10 seconds)
+    local attempt=1
+    
+    while [ $attempt -le $max_attempts ]; do
+        if curl -s "http://localhost:$port/api/status" > /dev/null 2>&1; then
+            echo "  ✅ $name is ready on port $port"
+            return 0
+        fi
+        sleep 0.5
+        attempt=$((attempt + 1))
+    done
+    
+    echo "  ⚠️ $name health check timed out (port $port) - continuing anyway"
+    return 0  # Don't fail the script, just warn
+}
+
 # Function to start an agent
 start_agent() {
     local name=$1
@@ -64,6 +86,17 @@ start_agent() {
     cd "$SCRIPT_DIR"
 }
 
+# Function to start agent and wait for health
+start_and_wait() {
+    local name=$1
+    local port=$2
+    local dir=$3
+    local wait_time=${4:-20}  # Default wait attempts
+    
+    start_agent "$name" "$port" "$dir"
+    wait_for_agent "$name" "$port" "$wait_time"
+}
+
 # Kill any existing agents
 echo ""
 echo "Stopping any existing agents..."
@@ -77,15 +110,12 @@ echo "╚═══════════════════════�
 echo ""
 
 # ═══════════════════════════════════════════════════════════════
-# TIER 1: Core Infrastructure (must start first)
+# TIER 1: Core Infrastructure (must start first and be healthy)
 # ═══════════════════════════════════════════════════════════════
 echo "▶ Starting Tier 1: Core Infrastructure..."
 
-start_agent "Data Agent (Curator)" 3021 "data-agent"
-sleep 2
-
-start_agent "Orchestrator (Nexus)" 3020 "orchestrator-agent"
-sleep 1
+start_and_wait "Data Agent (Curator)" 3021 "data-agent" 30
+start_and_wait "Orchestrator (Nexus)" 3020 "orchestrator-agent" 30
 
 # ═══════════════════════════════════════════════════════════════
 # TIER 2: Data & Analysis Agents
@@ -93,13 +123,23 @@ sleep 1
 echo ""
 echo "▶ Starting Tier 2: Data & Analysis Agents..."
 
+# Start all tier 2 agents
 start_agent "News Agent (Sentinel)" 3010 "news-agent"
 start_agent "Macro Agent (Oracle)" 3011 "macro-agent"
 start_agent "Technical Agent (Atlas)" 3012 "technical-agent"
 start_agent "Structure Agent (Architect)" 3014 "structure-agent"
 start_agent "Sentiment Agent (Pulse)" 3015 "sentiment-agent"
 start_agent "Regime Agent (Compass)" 3016 "regime-agent"
-sleep 1
+
+# Wait for all tier 2 to be healthy before tier 3
+echo "  Waiting for Tier 2 agents..."
+sleep 2
+wait_for_agent "News Agent" 3010 10
+wait_for_agent "Macro Agent" 3011 10
+wait_for_agent "Technical Agent" 3012 10
+wait_for_agent "Structure Agent" 3014 10
+wait_for_agent "Sentiment Agent" 3015 10
+wait_for_agent "Regime Agent" 3016 10
 
 # ═══════════════════════════════════════════════════════════════
 # TIER 3: Decision & Strategy Agents
@@ -110,7 +150,13 @@ echo "▶ Starting Tier 3: Decision & Strategy Agents..."
 start_agent "Strategy Agent (Tactician)" 3017 "strategy-agent"
 start_agent "Risk Agent (Guardian)" 3013 "risk-agent"
 start_agent "Portfolio Agent (Balancer)" 3018 "portfolio-agent"
+
+# Wait for tier 3 before starting execution
+echo "  Waiting for Tier 3 agents..."
 sleep 1
+wait_for_agent "Strategy Agent" 3017 10
+wait_for_agent "Risk Agent" 3013 10
+wait_for_agent "Portfolio Agent" 3018 10
 
 # ═══════════════════════════════════════════════════════════════
 # TIER 4: Execution & Monitoring Agents
@@ -122,6 +168,15 @@ start_agent "Execution Agent (Executor)" 3019 "execution-agent"
 start_agent "Journal Agent (Chronicle)" 3022 "journal-agent"
 start_agent "Analytics Agent (Insight)" 3023 "analytics-agent"
 start_agent "Governance Agent (Arbiter)" 3024 "governance-agent"
+
+# Final health check for all agents
+echo ""
+echo "▶ Running final health checks..."
+sleep 2
+wait_for_agent "Execution Agent" 3019 10
+wait_for_agent "Journal Agent" 3022 10
+wait_for_agent "Analytics Agent" 3023 10
+wait_for_agent "Governance Agent" 3024 10
 
 echo ""
 echo "╔══════════════════════════════════════════════════════════════╗"

@@ -61,33 +61,90 @@ async def get_pooled_client() -> httpx.AsyncClient:
     return await _client_pool.get_client()
 
 
-async def pooled_get(url: str, timeout: float = 5.0) -> Optional[dict]:
+async def pooled_get(
+    url: str, 
+    timeout: float = 5.0,
+    retries: int = 3,
+    backoff_base: float = 0.5
+) -> Optional[dict]:
     """
-    GET request using pooled connection.
+    GET request using pooled connection with retry logic.
+    Uses exponential backoff: 0.5s, 1s, 2s delays between retries.
     Returns JSON response or None on error.
     """
-    try:
-        client = await get_pooled_client()
-        response = await client.get(url, timeout=timeout)
-        if response.status_code == 200:
-            return response.json()
-    except Exception as e:
-        print(f"[HTTPPool] GET error {url}: {e}")
+    last_error = None
+    
+    for attempt in range(retries):
+        try:
+            client = await get_pooled_client()
+            response = await client.get(url, timeout=timeout)
+            if response.status_code == 200:
+                return response.json()
+            elif response.status_code >= 500:
+                # Server error - worth retrying
+                last_error = f"HTTP {response.status_code}"
+            else:
+                # Client error (4xx) - don't retry
+                print(f"[HTTPPool] GET {url} returned {response.status_code}")
+                return None
+        except (httpx.ConnectError, httpx.ConnectTimeout) as e:
+            last_error = str(e)
+        except Exception as e:
+            last_error = str(e)
+            # Don't retry on unexpected errors
+            break
+        
+        # Exponential backoff before retry
+        if attempt < retries - 1:
+            delay = backoff_base * (2 ** attempt)
+            await asyncio.sleep(delay)
+    
+    if last_error:
+        print(f"[HTTPPool] GET failed after {retries} attempts {url}: {last_error}")
     return None
 
 
-async def pooled_post(url: str, data: dict, timeout: float = 10.0) -> Optional[dict]:
+async def pooled_post(
+    url: str, 
+    data: dict, 
+    timeout: float = 10.0,
+    retries: int = 3,
+    backoff_base: float = 0.5
+) -> Optional[dict]:
     """
-    POST request using pooled connection.
+    POST request using pooled connection with retry logic.
+    Uses exponential backoff: 0.5s, 1s, 2s delays between retries.
     Returns JSON response or None on error.
     """
-    try:
-        client = await get_pooled_client()
-        response = await client.post(url, json=data, timeout=timeout)
-        if response.status_code == 200:
-            return response.json()
-    except Exception as e:
-        print(f"[HTTPPool] POST error {url}: {e}")
+    last_error = None
+    
+    for attempt in range(retries):
+        try:
+            client = await get_pooled_client()
+            response = await client.post(url, json=data, timeout=timeout)
+            if response.status_code == 200:
+                return response.json()
+            elif response.status_code >= 500:
+                # Server error - worth retrying
+                last_error = f"HTTP {response.status_code}"
+            else:
+                # Client error (4xx) - don't retry
+                print(f"[HTTPPool] POST {url} returned {response.status_code}")
+                return None
+        except (httpx.ConnectError, httpx.ConnectTimeout) as e:
+            last_error = str(e)
+        except Exception as e:
+            last_error = str(e)
+            # Don't retry on unexpected errors
+            break
+        
+        # Exponential backoff before retry
+        if attempt < retries - 1:
+            delay = backoff_base * (2 ** attempt)
+            await asyncio.sleep(delay)
+    
+    if last_error:
+        print(f"[HTTPPool] POST failed after {retries} attempts {url}: {last_error}")
     return None
 
 
