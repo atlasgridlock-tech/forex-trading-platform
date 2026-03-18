@@ -97,8 +97,15 @@ def send_ticks(data):
 def send_candles(data):
     """Send MTF candle data to API."""
     try:
-        response = requests.post(CANDLE_URL, json={"candles": data}, timeout=15)
-        return response.status_code == 200
+        response = requests.post(CANDLE_URL, json={"candles": data}, timeout=30)
+        if response.status_code == 200:
+            return True
+        else:
+            print(f"Candle API error: {response.status_code} - {response.text[:200]}")
+            return False
+    except requests.exceptions.Timeout:
+        print(f"Candle send timeout (30s) - data too large?")
+        return False
     except Exception as e:
         print(f"Candle send error: {e}")
         return False
