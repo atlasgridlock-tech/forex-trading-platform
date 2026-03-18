@@ -40,6 +40,88 @@ def pip_value(symbol: str) -> float:
     return 0.01 if is_jpy_pair(symbol) else 0.0001
 
 
+def pip_value_per_lot(symbol: str, account_currency: str = "USD") -> float:
+    """
+    Get approximate pip value per standard lot (100,000 units) in account currency.
+    
+    For pairs where USD is quote currency (EURUSD, GBPUSD): ~$10 per pip per lot
+    For pairs where USD is base currency (USDJPY, USDCHF): ~$10 per pip per lot (approximate)
+    For cross pairs (GBPJPY, EURAUD): varies based on exchange rates
+    
+    This is a simplified calculation - MT5 provides exact values.
+    """
+    symbol = symbol.upper().replace(".S", "").replace(".ECN", "")
+    
+    # USD is quote currency - direct calculation
+    if symbol.endswith("USD"):
+        return 10.0  # $10 per pip per standard lot
+    
+    # USD is base currency
+    if symbol.startswith("USD"):
+        return 10.0  # Approximate (varies with exchange rate)
+    
+    # JPY pairs (pip = 0.01)
+    if "JPY" in symbol:
+        return 8.0  # Approximate for JPY crosses
+    
+    # Other crosses - approximate
+    return 10.0
+
+
+def calculate_lot_size(
+    account_balance: float,
+    risk_percent: float,
+    stop_loss_pips: float,
+    symbol: str,
+    min_lot: float = 0.01,
+    max_lot: float = 1.0,
+) -> float:
+    """
+    Calculate position size based on risk percentage.
+    
+    Formula: Lot Size = (Account Balance × Risk %) / (Stop Loss Pips × Pip Value per Lot)
+    
+    Args:
+        account_balance: Account balance in USD
+        risk_percent: Risk per trade (e.g., 1.0 for 1%)
+        stop_loss_pips: Distance from entry to stop loss in pips
+        symbol: Trading symbol
+        min_lot: Minimum lot size (default 0.01)
+        max_lot: Maximum lot size (default 1.0)
+    
+    Returns:
+        Calculated lot size, clamped between min_lot and max_lot
+    """
+    if stop_loss_pips <= 0 or account_balance <= 0 or risk_percent <= 0:
+        return min_lot
+    
+    # Calculate risk amount in account currency
+    risk_amount = account_balance * (risk_percent / 100)
+    
+    # Get pip value per lot
+    pip_val = pip_value_per_lot(symbol)
+    
+    # Calculate lot size
+    # Risk Amount = Lot Size × Stop Loss Pips × Pip Value per Lot
+    # Lot Size = Risk Amount / (Stop Loss Pips × Pip Value per Lot)
+    lot_size = risk_amount / (stop_loss_pips * pip_val)
+    
+    # Round to 2 decimal places (standard lot precision)
+    lot_size = round(lot_size, 2)
+    
+    # Clamp between min and max
+    lot_size = max(min_lot, min(lot_size, max_lot))
+    
+    return lot_size
+
+
+def calculate_stop_loss_pips(entry_price: float, stop_loss: float, symbol: str) -> float:
+    """Calculate stop loss distance in pips."""
+    pip_size = pip_value(symbol)
+    distance = abs(entry_price - stop_loss)
+    return distance / pip_size
+
+
 def format_price(price: float, symbol: str) -> str:
     """Format price with correct decimals for symbol."""
     decimals = 3 if is_jpy_pair(symbol) else 5

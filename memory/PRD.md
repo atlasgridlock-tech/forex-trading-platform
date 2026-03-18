@@ -51,16 +51,30 @@ Build a 15-agent forex trading platform running on user's local Mac mini with:
 
 ## Auto-Trading Configuration
 - `AUTO_TRADE_ENABLED=true` - Enable/disable auto-execution (default: true)
-- `DEFAULT_LOT_SIZE=0.01` - Default position size
-- `MAX_LOT_SIZE=0.1` - Safety cap on lot size
+- `USE_RISK_BASED_SIZING=true` - Enable risk-based lot sizing (default: true)
+- `RISK_PERCENT=1.0` - Risk per trade as % of account (default: 1%)
+- `MIN_LOT_SIZE=0.01` - Minimum position size
+- `MAX_LOT_SIZE=0.5` - Maximum position size (safety cap)
+- `DEFAULT_LOT_SIZE=0.01` - Fallback if risk calc fails
 - Signal cooldown: 60 minutes (prevents duplicate executions)
 - Thresholds: Score >= 75 executes, Score >= 60 adds to watchlist
 
+## Position Sizing Formula
+```
+Lot Size = (Account Balance × Risk %) / (Stop Loss Pips × Pip Value per Lot)
+```
+Example: $10,000 account, 1% risk, 30 pip SL on EURUSD
+- Risk Amount = $10,000 × 1% = $100
+- Lot Size = $100 / (30 pips × $10/pip) = 0.33 lots
+
 ## Auto-Trading API Endpoints
-- `GET /api/auto-trade` - Check status and recent executions
-- `POST /api/auto-trade/toggle?enabled=true` - Enable/disable
-- `POST /api/auto-trade/lot-size?lot_size=0.02` - Set lot size
+- `GET /api/auto-trade` - Check status, risk settings, recent executions
+- `POST /api/auto-trade/toggle?enabled=true` - Enable/disable auto-trading
+- `POST /api/auto-trade/risk-percent?risk_percent=1.5` - Set risk % per trade
+- `POST /api/auto-trade/toggle-risk-sizing?enabled=true` - Toggle risk-based sizing
+- `POST /api/auto-trade/lot-size?lot_size=0.02` - Set fallback lot size
 - `POST /api/auto-trade/clear-cooldowns` - Reset signal cooldowns
+- `GET /api/auto-trade/calculate-size?symbol=EURUSD&entry_price=1.0850&stop_loss=1.0820` - Preview sizing
 
 ## Known Issues
 - [FIXED] News-agent showing fallback data instead of live calendar

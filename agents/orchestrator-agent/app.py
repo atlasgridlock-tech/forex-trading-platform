@@ -120,12 +120,22 @@ CONFIG = {
 # AUTO-TRADING CONFIGURATION
 # ═══════════════════════════════════════════════════════════════
 AUTO_TRADE_ENABLED = os.getenv("AUTO_TRADE_ENABLED", "true").lower() == "true"
-DEFAULT_LOT_SIZE = float(os.getenv("DEFAULT_LOT_SIZE", "0.01"))  # Minimum safe size
-MAX_LOT_SIZE = float(os.getenv("MAX_LOT_SIZE", "0.1"))  # Safety cap
+DEFAULT_LOT_SIZE = float(os.getenv("DEFAULT_LOT_SIZE", "0.01"))  # Fallback if risk calc fails
+MAX_LOT_SIZE = float(os.getenv("MAX_LOT_SIZE", "0.5"))  # Safety cap
+MIN_LOT_SIZE = float(os.getenv("MIN_LOT_SIZE", "0.01"))  # Minimum lot size
+
+# Risk-based position sizing
+RISK_PERCENT = float(os.getenv("RISK_PERCENT", "1.0"))  # Risk 1% of account per trade
+USE_RISK_BASED_SIZING = os.getenv("USE_RISK_BASED_SIZING", "true").lower() == "true"
 
 # Track executed signals to prevent duplicates
 executed_signals: Dict[str, datetime] = {}
 SIGNAL_COOLDOWN_MINUTES = 60  # Don't re-execute same signal within this window
+
+# Cache for account balance
+cached_account_balance: float = 0.0
+last_balance_fetch: Optional[datetime] = None
+BALANCE_CACHE_SECONDS = 30
 
 # In-memory storage
 decisions_log: List[dict] = []
@@ -189,6 +199,76 @@ async def post_to_agent(agent: str, endpoint: str, data: dict, timeout: float = 
     return None
 
 
+async def get_account_balance() -> float:
+    """Fetch account balance from Data Agent with caching."""
+    global cached_account_balance, last_balance_fetch
+    
+    now = datetime.utcnow()
+    
+    # Use cached value if fresh enough
+    if last_balance_fetch and (now - last_balance_fetch).total_seconds() < BALANCE_CACHE_SECONDS:
+        return cached_account_balance
+    
+    # Fetch from Data Agent
+    account_data = await fetch_agent_data("curator", "/api/account")
+    
+    if account_data and account_data.get("balance"):
+        cached_account_balance = float(account_data["balance"])
+        last_balance_fetch = now
+        return cached_account_balance
+    
+    # Return cached value or default
+    return cached_account_balance if cached_account_balance > 0 else 10000.0  # Default fallback
+
+
+async def calculate_position_size(
+    symbol: str,
+    entry_price: float,
+    stop_loss: float,
+) -> tuple[float, dict]:
+    """
+    Calculate position size based on risk percentage.
+    Returns (lot_size, calculation_details).
+    """
+    from shared import calculate_lot_size, calculate_stop_loss_pips, pip_value_per_lot
+    
+    details = {
+        "method": "fixed" if not USE_RISK_BASED_SIZING else "risk_based",
+        "risk_percent": RISK_PERCENT,
+    }
+    
+    if not USE_RISK_BASED_SIZING:
+        return DEFAULT_LOT_SIZE, details
+    
+    # Get account balance
+    balance = await get_account_balance()
+    details["account_balance"] = balance
+    
+    # Calculate stop loss in pips
+    sl_pips = calculate_stop_loss_pips(entry_price, stop_loss, symbol)
+    details["stop_loss_pips"] = round(sl_pips, 1)
+    
+    if sl_pips <= 0:
+        details["error"] = "Invalid stop loss distance"
+        return DEFAULT_LOT_SIZE, details
+    
+    # Calculate lot size
+    lot_size = calculate_lot_size(
+        account_balance=balance,
+        risk_percent=RISK_PERCENT,
+        stop_loss_pips=sl_pips,
+        symbol=symbol,
+        min_lot=MIN_LOT_SIZE,
+        max_lot=MAX_LOT_SIZE,
+    )
+    
+    details["calculated_lot_size"] = lot_size
+    details["pip_value_per_lot"] = pip_value_per_lot(symbol)
+    details["risk_amount"] = round(balance * (RISK_PERCENT / 100), 2)
+    
+    return lot_size, details
+
+
 async def route_to_executor(
     symbol: str,
     direction: str,  # "long" or "short"
@@ -219,8 +299,8 @@ async def route_to_executor(
             print(f"[Nexus] ⏳ Signal cooldown: {symbol} {direction} executed {minutes_since:.0f}m ago")
             return None
     
-    # Calculate lot size (could be enhanced with risk-based sizing)
-    lot_size = DEFAULT_LOT_SIZE
+    # Calculate lot size using risk-based sizing
+    lot_size, size_details = await calculate_position_size(symbol, entry_price, stop_loss)
     
     # Build order request
     order = {
@@ -233,8 +313,11 @@ async def route_to_executor(
         "comment": f"Nexus|{strategy}|{confidence}%",
     }
     
+    # Log with sizing details
+    sizing_info = f"Risk: {size_details.get('risk_percent', '?')}% of ${size_details.get('account_balance', '?'):,.0f}" if USE_RISK_BASED_SIZING else "Fixed size"
     print(f"[Nexus] 🚀 AUTO-EXECUTING: {direction.upper()} {symbol} @ {entry_price or 'MARKET'}")
-    print(f"        SL: {stop_loss} | TP: {take_profit} | Size: {lot_size} lots")
+    print(f"        SL: {stop_loss} ({size_details.get('stop_loss_pips', '?')} pips) | TP: {take_profit}")
+    print(f"        Size: {lot_size} lots ({sizing_info})")
     
     # Send to Executor
     result = await post_to_agent("executor", "/api/execute", order, timeout=30.0)
@@ -244,6 +327,8 @@ async def route_to_executor(
         if status == "EXECUTED":
             print(f"[Nexus] ✅ ORDER FILLED: {result.get('order_id')} - Health: {result.get('health_score', 0)}/100")
             executed_signals[signal_key] = now
+            # Add sizing details to result
+            result["position_sizing"] = size_details
         elif status == "REJECTED":
             print(f"[Nexus] ❌ ORDER REJECTED: {result.get('reason', 'Unknown')}")
         else:
@@ -1459,11 +1544,20 @@ async def update_config(new_config: dict):
 
 @app.get("/api/auto-trade")
 async def get_auto_trade_status():
-    """Get auto-trading status and recent executions."""
+    """Get auto-trading status, risk settings, and recent executions."""
+    # Get current account balance for display
+    balance = await get_account_balance()
+    
     return {
         "enabled": AUTO_TRADE_ENABLED,
-        "default_lot_size": DEFAULT_LOT_SIZE,
-        "max_lot_size": MAX_LOT_SIZE,
+        "position_sizing": {
+            "method": "risk_based" if USE_RISK_BASED_SIZING else "fixed",
+            "risk_percent": RISK_PERCENT,
+            "account_balance": balance,
+            "min_lot_size": MIN_LOT_SIZE,
+            "max_lot_size": MAX_LOT_SIZE,
+            "default_lot_size": DEFAULT_LOT_SIZE,
+        },
         "signal_cooldown_minutes": SIGNAL_COOLDOWN_MINUTES,
         "recent_executions": [
             {"signal": k, "executed_at": v.isoformat()}
@@ -1485,13 +1579,34 @@ async def toggle_auto_trade(enabled: bool = True):
 
 @app.post("/api/auto-trade/lot-size")
 async def set_lot_size(lot_size: float):
-    """Set default lot size for auto-trades."""
+    """Set default/fallback lot size for auto-trades."""
     global DEFAULT_LOT_SIZE
     if lot_size <= 0 or lot_size > MAX_LOT_SIZE:
-        raise HTTPException(status_code=400, detail=f"Lot size must be between 0.01 and {MAX_LOT_SIZE}")
+        raise HTTPException(status_code=400, detail=f"Lot size must be between {MIN_LOT_SIZE} and {MAX_LOT_SIZE}")
     DEFAULT_LOT_SIZE = lot_size
     print(f"[Nexus] 📊 Default lot size set to {lot_size}")
     return {"default_lot_size": DEFAULT_LOT_SIZE}
+
+
+@app.post("/api/auto-trade/risk-percent")
+async def set_risk_percent(risk_percent: float):
+    """Set risk percentage per trade (e.g., 1.0 for 1%)."""
+    global RISK_PERCENT
+    if risk_percent <= 0 or risk_percent > 5.0:
+        raise HTTPException(status_code=400, detail="Risk percent must be between 0.1 and 5.0")
+    RISK_PERCENT = risk_percent
+    print(f"[Nexus] 📊 Risk percent set to {risk_percent}%")
+    return {"risk_percent": RISK_PERCENT}
+
+
+@app.post("/api/auto-trade/toggle-risk-sizing")
+async def toggle_risk_based_sizing(enabled: bool = True):
+    """Enable or disable risk-based position sizing."""
+    global USE_RISK_BASED_SIZING
+    USE_RISK_BASED_SIZING = enabled
+    method = "RISK-BASED" if enabled else "FIXED"
+    print(f"[Nexus] 📊 Position sizing method: {method}")
+    return {"use_risk_based_sizing": USE_RISK_BASED_SIZING, "message": f"Position sizing: {method}"}
 
 
 @app.post("/api/auto-trade/clear-cooldowns")
@@ -1502,6 +1617,19 @@ async def clear_signal_cooldowns():
     executed_signals = {}
     print(f"[Nexus] 🔄 Cleared {count} signal cooldowns")
     return {"cleared": count}
+
+
+@app.get("/api/auto-trade/calculate-size")
+async def preview_position_size(symbol: str, entry_price: float, stop_loss: float):
+    """Preview position size calculation without executing."""
+    lot_size, details = await calculate_position_size(symbol, entry_price, stop_loss)
+    return {
+        "symbol": symbol,
+        "entry_price": entry_price,
+        "stop_loss": stop_loss,
+        "calculated_lot_size": lot_size,
+        "details": details,
+    }
 
 
 # Storage for agent data ingestion
