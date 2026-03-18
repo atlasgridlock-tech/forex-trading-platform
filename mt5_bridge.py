@@ -32,18 +32,9 @@ def read_tick_data():
     
     try:
         data = {"symbols": {}}
-        # Try different encodings
-        for encoding in ['utf-8', 'utf-16', 'utf-16-le', 'latin-1']:
-            try:
-                with open(TICK_FILE, 'r', encoding=encoding) as f:
-                    content = f.read()
-                    if 'Symbol' in content or 'symbol' in content:
-                        break
-            except:
-                continue
-        
-        with open(TICK_FILE, 'r', encoding=encoding) as f:
-            reader = csv.DictReader(f)
+        # MT5 exports as TAB-delimited
+        with open(TICK_FILE, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f, delimiter='\t')
             for row in reader:
                 symbol = row.get('Symbol', row.get('symbol', '')).strip()
                 if symbol:
@@ -66,20 +57,9 @@ def read_candle_data():
         # Structure: {symbol: {timeframe: [candles]}}
         candles = defaultdict(lambda: defaultdict(list))
         
-        # Try different encodings - EA now uses ANSI
-        encoding = 'utf-8'
-        for enc in ['utf-8', 'latin-1', 'utf-16', 'utf-16-le']:
-            try:
-                with open(CANDLE_FILE, 'r', encoding=enc) as f:
-                    first_line = f.readline()
-                    if 'Symbol' in first_line or 'symbol' in first_line:
-                        encoding = enc
-                        break
-            except:
-                continue
-        
-        with open(CANDLE_FILE, 'r', encoding=encoding) as f:
-            reader = csv.DictReader(f)
+        # MT5 exports as TAB-delimited
+        with open(CANDLE_FILE, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f, delimiter='\t')
             for row in reader:
                 symbol = row.get('Symbol', row.get('symbol', '')).strip()
                 tf = row.get('Timeframe', row.get('timeframe', '')).strip()
