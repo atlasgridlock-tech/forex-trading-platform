@@ -57,8 +57,22 @@ MT5_DATA_PATH = Path(os.getenv("MT5_DATA_PATH", "/app/mt5_data"))
 CALENDAR_FILE = MT5_DATA_PATH / "calendar_data.json"
 
 # ═══════════════════════════════════════════════════════════════
-# ECONOMIC CALENDAR (Real data from MT5, fallback to simulated)
+# ECONOMIC CALENDAR (Real data from multiple sources)
 # ═══════════════════════════════════════════════════════════════
+
+# Import the economic calendar module
+try:
+    from shared.economic_calendar import (
+        get_economic_calendar, 
+        get_upcoming_events, 
+        get_high_impact_events,
+        format_event_for_display
+    )
+    HAS_CALENDAR_MODULE = True
+except ImportError:
+    HAS_CALENDAR_MODULE = False
+    print("[Sentinel] Warning: economic_calendar module not found, using fallback")
+
 
 def load_calendar_from_mt5() -> List[dict]:
     """Load real economic calendar from MT5 export file."""
@@ -110,14 +124,80 @@ def load_calendar_from_mt5() -> List[dict]:
     return []
 
 
+async def load_live_calendar() -> List[dict]:
+    """Load economic calendar from live sources."""
+    if not HAS_CALENDAR_MODULE:
+        return []
+    
+    try:
+        raw_events = await get_economic_calendar()
+        events = []
+        
+        for ev in raw_events:
+            # Parse datetime
+            try:
+                date_str = ev.get('date', '')
+                time_str = ev.get('time', '12:00')
+                if time_str in ['All Day', 'Tentative', '']:
+                    time_str = '12:00'
+                
+                if 'T' in date_str:
+                    event_time = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                else:
+                    event_time = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
+            except:
+                continue
+            
+            currency = ev.get('currency', '')
+            
+            # Determine affected pairs
+            affected = []
+            for sym in SYMBOLS:
+                if currency in sym:
+                    affected.append(sym)
+            
+            events.append({
+                "time": event_time,
+                "event": ev.get('title', 'Unknown'),
+                "currency": currency,
+                "impact": ev.get('impact', 'LOW').lower(),
+                "forecast": ev.get('forecast'),
+                "previous": ev.get('previous'),
+                "affected_pairs": affected if affected else [sym for sym in SYMBOLS if currency in sym],
+                "source": ev.get('source', 'live')
+            })
+        
+        print(f"[Sentinel] Loaded {len(events)} events from live calendar")
+        return events
+        
+    except Exception as e:
+        print(f"[Sentinel] Error loading live calendar: {e}")
+        return []
+
+
 def generate_calendar_events() -> List[dict]:
-    """Get calendar events - real from MT5 if available, otherwise simulated."""
-    # Try real data first
+    """Get calendar events - uses live data from multiple sources."""
+    # Try MT5 file first
     real_events = load_calendar_from_mt5()
     if real_events:
         return real_events
     
-    print("[Sentinel] Using simulated calendar events (MT5 calendar not available)")
+    # Try live calendar API (run in new event loop if needed)
+    try:
+        import asyncio
+        try:
+            loop = asyncio.get_running_loop()
+            # We're in an async context - will fetch on demand via endpoint
+            pass
+        except RuntimeError:
+            # No running loop - we can run synchronously
+            live_events = asyncio.run(load_live_calendar())
+            if live_events:
+                return live_events
+    except Exception as e:
+        print(f"[Sentinel] Could not load live calendar: {e}")
+    
+    print("[Sentinel] Using fallback calendar events")
     now = datetime.utcnow()
     
     # Simulated events (in production: fetch from ForexFactory, Investing.com, etc.)

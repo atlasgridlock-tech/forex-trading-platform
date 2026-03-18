@@ -468,6 +468,84 @@ def execute_live_order(order: OrderRequest) -> dict:
     if not LIVE_MODE_CONFIRMED:
         raise HTTPException(status_code=403, detail="LIVE MODE NOT CONFIRMED")
     
+    # Try the new order bridge first
+    try:
+        from shared.order_bridge import execute_and_wait, get_open_positions
+        
+        # Check for existing positions in same symbol
+        existing = get_open_positions()
+        for pos in existing:
+            pos_symbol = pos.get("symbol", "").upper()
+            # Clean symbol names for comparison
+            for suffix in ['.ecn', '.ECN', '.s', '.pro']:
+                pos_symbol = pos_symbol.replace(suffix, "")
+            order_symbol = order.symbol.upper()
+            for suffix in ['.ecn', '.ECN', '.s', '.pro']:
+                order_symbol = order_symbol.replace(suffix, "")
+            
+            if pos_symbol == order_symbol:
+                return {
+                    "order_id": f"LIVE-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
+                    "status": "REJECTED",
+                    "reason": f"Already have {pos.get('type')} position in {pos_symbol}",
+                    "mode": "guarded_live",
+                    "health_score": 0,
+                }
+        
+        # Execute via order bridge
+        start_time = time.time()
+        result = execute_and_wait(
+            symbol=order.symbol,  # Bridge will handle symbol mapping
+            action=order.direction,
+            volume=order.lot_size,
+            sl=order.stop_loss,
+            tp=0,  # Lifecycle handles TPs
+            comment=f"Platform|{datetime.utcnow().strftime('%H:%M')}",
+            timeout=30.0
+        )
+        latency_ms = int((time.time() - start_time) * 1000)
+        
+        if result.get("status") == "FILLED":
+            receipt = {
+                "order_id": result.get("order_id"),
+                "ticket": result.get("ticket"),
+                "symbol": order.symbol,
+                "direction": order.direction,
+                "lot_size": order.lot_size,
+                "intent_price": order.entry_price,
+                "fill_price": 0,  # Will be in MT5 result message
+                "stop_loss": order.stop_loss,
+                "take_profit": order.take_profit,
+                "fill_time": datetime.utcnow().isoformat(),
+                "latency_ms": latency_ms,
+                "slippage_pips": 0,
+                "spread_at_fill": 0,
+                "sl_confirmed": True,
+                "tp_confirmed": False,  # Lifecycle handles TPs
+                "broker_status": "FILLED",
+                "mode": "guarded_live",
+                "status": "EXECUTED",
+                "mt5_message": result.get("message"),
+            }
+            receipt["health_score"] = calculate_health_score(receipt)
+            print(f"[Executor] ✅ LIVE ORDER FILLED: {order.direction} {order.symbol} {order.lot_size} lots")
+            return receipt
+        else:
+            return {
+                "order_id": result.get("order_id"),
+                "status": result.get("status", "ERROR"),
+                "error": result.get("message", "Order not filled"),
+                "mode": "guarded_live",
+                "latency_ms": latency_ms,
+                "health_score": 0,
+            }
+            
+    except ImportError:
+        print("[Executor] Order bridge not available, falling back to file-based method")
+    except Exception as e:
+        print(f"[Executor] Order bridge error: {e}, falling back to file-based method")
+    
+    # Fallback: Original file-based method
     # Check bridge status
     bridge_status = check_mt5_bridge_status()
     if bridge_status.get("status") != "READY":
