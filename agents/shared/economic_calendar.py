@@ -43,34 +43,75 @@ async def fetch_forex_factory_calendar() -> List[dict]:
                     previous = event.find('previous')
                     
                     if title is not None and date_elem is not None:
-                        # Parse date and time
-                        date_str = date_elem.text if date_elem.text else ""
-                        time_str = time_elem.text if time_elem is not None and time_elem.text else "All Day"
+                        # Parse date: format is "03-15-2026" (MM-DD-YYYY)
+                        date_str = date_elem.text.strip() if date_elem.text else ""
+                        # Remove CDATA wrapper if present
+                        date_str = date_str.replace("<![CDATA[", "").replace("]]>", "").strip()
+                        
+                        # Parse time: format is "9:30pm" or "All Day"
+                        time_str = time_elem.text.strip() if time_elem is not None and time_elem.text else "All Day"
+                        time_str = time_str.replace("<![CDATA[", "").replace("]]>", "").strip()
+                        
+                        # Convert to 24h format
+                        time_24h = "12:00"
+                        if time_str and time_str != "All Day" and time_str != "Tentative":
+                            try:
+                                # Parse time like "9:30pm" or "2:00am"
+                                from datetime import datetime as dt
+                                t = dt.strptime(time_str.lower(), "%I:%M%p")
+                                time_24h = t.strftime("%H:%M")
+                            except:
+                                time_24h = "12:00"
+                        
+                        # Convert date format from MM-DD-YYYY to YYYY-MM-DD
+                        parsed_date = ""
+                        try:
+                            parts = date_str.split("-")
+                            if len(parts) == 3:
+                                parsed_date = f"{parts[2]}-{parts[0]}-{parts[1]}"  # YYYY-MM-DD
+                        except:
+                            continue
                         
                         # Convert impact to our format
-                        impact_text = impact.text if impact is not None else ""
-                        if impact_text == "High":
+                        impact_text = impact.text.strip() if impact is not None and impact.text else ""
+                        impact_text = impact_text.replace("<![CDATA[", "").replace("]]>", "").strip()
+                        if impact_text.lower() == "high":
                             impact_level = "HIGH"
-                        elif impact_text == "Medium":
+                        elif impact_text.lower() == "medium":
                             impact_level = "MEDIUM"
                         else:
                             impact_level = "LOW"
                         
+                        # Get country/currency
+                        country_text = country.text.strip() if country is not None and country.text else ""
+                        country_text = country_text.replace("<![CDATA[", "").replace("]]>", "").strip()
+                        
+                        title_text = title.text.strip() if title.text else ""
+                        title_text = title_text.replace("<![CDATA[", "").replace("]]>", "").strip()
+                        
+                        forecast_text = forecast.text.strip() if forecast is not None and forecast.text else ""
+                        forecast_text = forecast_text.replace("<![CDATA[", "").replace("]]>", "").strip()
+                        
+                        previous_text = previous.text.strip() if previous is not None and previous.text else ""
+                        previous_text = previous_text.replace("<![CDATA[", "").replace("]]>", "").strip()
+                        
                         events.append({
-                            'title': title.text,
-                            'country': country.text if country is not None else "",
-                            'currency': get_currency_from_country(country.text if country is not None else ""),
-                            'date': date_str,
-                            'time': time_str,
+                            'title': title_text,
+                            'country': country_text,
+                            'currency': country_text,  # In FF, country IS the currency code
+                            'date': parsed_date,
+                            'time': time_24h,
                             'impact': impact_level,
-                            'forecast': forecast.text if forecast is not None else "",
-                            'previous': previous.text if previous is not None else "",
+                            'forecast': forecast_text,
+                            'previous': previous_text,
                             'source': 'forex_factory'
                         })
                 
                 print(f"[Calendar] Fetched {len(events)} events from Forex Factory")
     except Exception as e:
         print(f"[Calendar] Forex Factory fetch error: {e}")
+        import traceback
+        traceback.print_exc()
     
     return events
 

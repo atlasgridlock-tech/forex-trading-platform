@@ -540,7 +540,15 @@ async def startup():
     global economic_calendar, symbol_risk_scores
     print(f"🚀 {AGENT_NAME} (News & Event Risk Agent) v2.0 starting...")
     
-    economic_calendar = generate_calendar_events()
+    # Try to load live calendar first
+    live_events = await load_live_calendar()
+    if live_events:
+        economic_calendar = live_events
+        print(f"[Sentinel] ✅ Loaded {len(live_events)} LIVE events from Forex Factory")
+    else:
+        economic_calendar = generate_calendar_events()
+        print(f"[Sentinel] Using fallback calendar with {len(economic_calendar)} events")
+    
     now = datetime.utcnow()
     for symbol in SYMBOLS:
         symbol_risk_scores[symbol] = calculate_symbol_risk(symbol, economic_calendar, now)
