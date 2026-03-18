@@ -176,28 +176,16 @@ async def load_live_calendar() -> List[dict]:
 
 
 def generate_calendar_events() -> List[dict]:
-    """Get calendar events - uses live data from multiple sources."""
+    """Get calendar events - sync fallback only. Use load_live_calendar() for live data."""
     # Try MT5 file first
     real_events = load_calendar_from_mt5()
     if real_events:
+        print(f"[Sentinel] Loaded {len(real_events)} events from MT5 file")
         return real_events
     
-    # Try live calendar API (run in new event loop if needed)
-    try:
-        import asyncio
-        try:
-            loop = asyncio.get_running_loop()
-            # We're in an async context - will fetch on demand via endpoint
-            pass
-        except RuntimeError:
-            # No running loop - we can run synchronously
-            live_events = asyncio.run(load_live_calendar())
-            if live_events:
-                return live_events
-    except Exception as e:
-        print(f"[Sentinel] Could not load live calendar: {e}")
-    
-    print("[Sentinel] Using fallback calendar events")
+    # NOTE: This function is sync-only fallback.
+    # For live data, use await load_live_calendar() in async context.
+    print("[Sentinel] ⚠️ Using static fallback calendar events (no MT5 file)")
     now = datetime.utcnow()
     
     # Simulated events (in production: fetch from ForexFactory, Investing.com, etc.)
@@ -515,8 +503,16 @@ async def background_monitoring():
     global economic_calendar, symbol_risk_scores
     
     while True:
-        # Update calendar
-        economic_calendar = generate_calendar_events()
+        # Update calendar - try live sources first, then fallback
+        live_events = await load_live_calendar()
+        if live_events:
+            economic_calendar = live_events
+            print(f"[Sentinel] ✅ Updated calendar with {len(live_events)} LIVE events")
+        elif not economic_calendar:
+            # Only use fallback if we have no data at all
+            economic_calendar = generate_calendar_events()
+            print(f"[Sentinel] ⚠️ Using fallback calendar ({len(economic_calendar)} events)")
+        # else: keep existing data (could be from MT5 or previous live fetch)
         
         # Calculate symbol risks
         now = datetime.utcnow()
@@ -529,7 +525,7 @@ async def background_monitoring():
         # Send to orchestrator
         await send_to_orchestrator()
         
-        await asyncio.sleep(60)  # Update every minute
+        await asyncio.sleep(300)  # Update every 5 minutes (live data is cached for 1 hour anyway)
 
 
 # Using shared call_claude - removed duplicate implementation
