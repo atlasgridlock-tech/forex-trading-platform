@@ -32,20 +32,29 @@ def read_tick_data():
     
     try:
         data = {"symbols": {}}
-        with open(TICK_FILE, 'r', encoding='utf-16') as f:
-            reader = csv.DictReader(f, delimiter='\t')
+        # Try different encodings
+        for encoding in ['utf-8', 'utf-16', 'utf-16-le', 'latin-1']:
+            try:
+                with open(TICK_FILE, 'r', encoding=encoding) as f:
+                    content = f.read()
+                    if 'Symbol' in content or 'symbol' in content:
+                        break
+            except:
+                continue
+        
+        with open(TICK_FILE, 'r', encoding=encoding) as f:
+            reader = csv.DictReader(f)
             for row in reader:
-                symbol = row.get('symbol', '').strip()
+                symbol = row.get('Symbol', row.get('symbol', '')).strip()
                 if symbol:
                     data["symbols"][symbol] = {
-                        "bid": float(row.get('bid', 0)),
-                        "ask": float(row.get('ask', 0)),
-                        "spread": float(row.get('spread', 0)),
-                        "time": int(row.get('time', 0)),
-                        "volume": float(row.get('volume', 0)),
+                        "bid": float(row.get('Bid', row.get('bid', 0))),
+                        "ask": float(row.get('Ask', row.get('ask', 0))),
+                        "spread": float(row.get('Spread', row.get('spread', 0))),
                     }
         return data
     except Exception as e:
+        print(f"Error reading tick data: {e}")
         return None
 
 def read_candle_data():
@@ -57,21 +66,35 @@ def read_candle_data():
         # Structure: {symbol: {timeframe: [candles]}}
         candles = defaultdict(lambda: defaultdict(list))
         
-        with open(CANDLE_FILE, 'r', encoding='utf-16') as f:
-            reader = csv.DictReader(f, delimiter='\t')
+        # Try different encodings - EA now uses ANSI
+        encoding = 'utf-8'
+        for enc in ['utf-8', 'latin-1', 'utf-16', 'utf-16-le']:
+            try:
+                with open(CANDLE_FILE, 'r', encoding=enc) as f:
+                    first_line = f.readline()
+                    if 'Symbol' in first_line or 'symbol' in first_line:
+                        encoding = enc
+                        break
+            except:
+                continue
+        
+        with open(CANDLE_FILE, 'r', encoding=encoding) as f:
+            reader = csv.DictReader(f)
             for row in reader:
-                symbol = row.get('symbol', '').strip()
-                tf = row.get('timeframe', '').strip()
+                symbol = row.get('Symbol', row.get('symbol', '')).strip()
+                tf = row.get('Timeframe', row.get('timeframe', '')).strip()
                 if symbol and tf:
-                    candles[symbol][tf].append({
-                        "time": int(row.get('time', 0)),
-                        "open": float(row.get('open', 0)),
-                        "high": float(row.get('high', 0)),
-                        "low": float(row.get('low', 0)),
-                        "close": float(row.get('close', 0)),
-                        "volume": int(row.get('volume', 0)),
-                        "spread": int(row.get('spread', 0)),
-                    })
+                    try:
+                        candles[symbol][tf].append({
+                            "time": row.get('DateTime', row.get('time', '')),
+                            "open": float(row.get('Open', row.get('open', 0))),
+                            "high": float(row.get('High', row.get('high', 0))),
+                            "low": float(row.get('Low', row.get('low', 0))),
+                            "close": float(row.get('Close', row.get('close', 0))),
+                            "volume": int(float(row.get('Volume', row.get('volume', 0)))),
+                        })
+                    except (ValueError, KeyError) as e:
+                        continue
         
         # Convert to regular dict
         result = {}
