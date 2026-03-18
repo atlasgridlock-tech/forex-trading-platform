@@ -36,11 +36,25 @@ app = FastAPI(title="Chronicle - Trade Journal Agent", version="1.0")
 
 AGENT_NAME = "Chronicle"
 ORCHESTRATOR_URL = get_agent_url("orchestrator")
-WORKSPACE = Path("/app/workspace")
+
+# Use configurable workspace - default to local ./workspace if /app doesn't exist
+if os.path.exists("/app") and os.access("/app", os.W_OK):
+    WORKSPACE = Path("/app/workspace")
+else:
+    # Local development - use workspace relative to script
+    WORKSPACE = Path(__file__).parent / "workspace"
+
 JOURNAL_DIR = WORKSPACE / "journal"
 
 # Ensure journal directory exists
-JOURNAL_DIR.mkdir(parents=True, exist_ok=True)
+try:
+    JOURNAL_DIR.mkdir(parents=True, exist_ok=True)
+except OSError as e:
+    print(f"[Chronicle] Warning: Could not create journal dir: {e}")
+    # Fallback to temp directory
+    import tempfile
+    JOURNAL_DIR = Path(tempfile.gettempdir()) / "forex_platform" / "journal"
+    JOURNAL_DIR.mkdir(parents=True, exist_ok=True)
 
 
 class TradeStatus(str, Enum):

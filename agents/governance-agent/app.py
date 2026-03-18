@@ -31,14 +31,32 @@ app = FastAPI(title="Arbiter - Model Governance Agent", version="1.0")
 
 AGENT_NAME = "Arbiter"
 ORCHESTRATOR_URL = get_agent_url("orchestrator")
-WORKSPACE = Path("/app/workspace")
+
+# Use configurable workspace - default to local ./workspace if /app doesn't exist
+if os.path.exists("/app") and os.access("/app", os.W_OK):
+    WORKSPACE = Path("/app/workspace")
+else:
+    # Local development - use workspace relative to script
+    WORKSPACE = Path(__file__).parent / "workspace"
+
 VERSIONS_DIR = WORKSPACE / "versions"
 CHANGELOG_FILE = WORKSPACE / "CHANGELOG.md"
 REQUESTS_DIR = WORKSPACE / "requests"
 
 # Ensure directories exist
-VERSIONS_DIR.mkdir(parents=True, exist_ok=True)
-REQUESTS_DIR.mkdir(parents=True, exist_ok=True)
+try:
+    VERSIONS_DIR.mkdir(parents=True, exist_ok=True)
+    REQUESTS_DIR.mkdir(parents=True, exist_ok=True)
+except OSError as e:
+    print(f"[Arbiter] Warning: Could not create workspace dirs: {e}")
+    # Fallback to temp directory
+    import tempfile
+    WORKSPACE = Path(tempfile.gettempdir()) / "forex_platform" / "arbiter"
+    VERSIONS_DIR = WORKSPACE / "versions"
+    REQUESTS_DIR = WORKSPACE / "requests"
+    CHANGELOG_FILE = WORKSPACE / "CHANGELOG.md"
+    VERSIONS_DIR.mkdir(parents=True, exist_ok=True)
+    REQUESTS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 class ChangeType(str, Enum):
