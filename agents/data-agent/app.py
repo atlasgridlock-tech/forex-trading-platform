@@ -770,11 +770,24 @@ class TickData(BaseModel):
 class CandleData(BaseModel):
     candles: Dict[str, Dict[str, List[dict]]]  # symbol -> timeframe -> candles
 
+class AccountData(BaseModel):
+    balance: float
+    equity: float
+    margin: float = 0
+    free_margin: float = 0
+    leverage: int = 0
+    currency: str = "USD"
+    profit: float = 0
+    server: str = ""
+    company: str = ""
+
 # In-memory live market data
 live_market_data: Dict[str, dict] = {}
 live_candle_data: Dict[str, Dict[str, List[dict]]] = defaultdict(lambda: defaultdict(list))
+live_account_data: Dict[str, any] = {}
 last_tick_update: Optional[datetime] = None
 last_candle_update: Optional[datetime] = None
+last_account_update: Optional[datetime] = None
 
 
 @app.post("/api/market-data/update")
@@ -861,6 +874,30 @@ async def update_candles(data: CandleData):
         "symbols": symbols_updated,
         "timestamp": last_candle_update.isoformat()
     }
+
+
+@app.post("/api/account/update")
+async def update_account(data: AccountData):
+    """Receive live account data from MT5 bridge."""
+    global live_account_data, last_account_update
+    
+    live_account_data = {
+        "balance": data.balance,
+        "equity": data.equity,
+        "margin": data.margin,
+        "free_margin": data.free_margin,
+        "leverage": data.leverage,
+        "currency": data.currency,
+        "profit": data.profit,
+        "server": data.server,
+        "company": data.company,
+        "updated": datetime.utcnow().isoformat(),
+    }
+    
+    last_account_update = datetime.utcnow()
+    
+    logger.info(f"[Curator] Received account update: Balance=${data.balance:,.2f} Equity=${data.equity:,.2f}")
+    return {"status": "ok", "timestamp": last_account_update.isoformat()}
 
 
 async def recalculate_quality():
@@ -1116,14 +1153,19 @@ async def get_symbol_market_data(symbol: str):
 
 @app.get("/api/account")
 async def get_account():
-    """Get account data from MT5."""
+    """Get account data from MT5. Prefers live data over file data."""
+    # First try live data from bridge
+    if live_account_data:
+        return live_account_data
+    
+    # Fall back to file data
     try:
         if ACCOUNT_FILE.exists():
             with open(ACCOUNT_FILE, 'r') as f:
                 return json.load(f)
     except Exception as e:
         return {"error": str(e)}
-    return {"error": "Account file not found"}
+    return {"balance": 0, "equity": 0, "margin": 0, "free_margin": 0, "error": "No account data available"}
 
 
 @app.get("/api/positions")

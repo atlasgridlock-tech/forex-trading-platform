@@ -126,7 +126,50 @@ void ExportAllData()
 {
     ExportMarketData();
     ExportCandleData();
+    ExportAccountData();
     lastUpdate = TimeCurrent();
+}
+
+//+------------------------------------------------------------------+
+void ExportAccountData()
+{
+    string filename = "account_data.csv";
+    int handle = FileOpen(filename, FILE_WRITE|FILE_CSV|FILE_COMMON|FILE_ANSI);
+    
+    if(handle == INVALID_HANDLE)
+    {
+        Print("ERROR: Cannot open ", filename, " - Error: ", GetLastError());
+        return;
+    }
+    
+    // Write header
+    FileWrite(handle, "Balance", "Equity", "Margin", "FreeMargin", "Leverage", "Currency", "Profit", "Server", "Company");
+    
+    // Write account data
+    double balance = AccountInfoDouble(ACCOUNT_BALANCE);
+    double equity = AccountInfoDouble(ACCOUNT_EQUITY);
+    double margin = AccountInfoDouble(ACCOUNT_MARGIN);
+    double freeMargin = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
+    long leverage = AccountInfoInteger(ACCOUNT_LEVERAGE);
+    string currency = AccountInfoString(ACCOUNT_CURRENCY);
+    double profit = AccountInfoDouble(ACCOUNT_PROFIT);
+    string server = AccountInfoString(ACCOUNT_SERVER);
+    string company = AccountInfoString(ACCOUNT_COMPANY);
+    
+    FileWrite(handle, 
+              DoubleToString(balance, 2),
+              DoubleToString(equity, 2),
+              DoubleToString(margin, 2),
+              DoubleToString(freeMargin, 2),
+              IntegerToString(leverage),
+              currency,
+              DoubleToString(profit, 2),
+              server,
+              company);
+    
+    FileClose(handle);
+    
+    Print("[", TimeToString(TimeCurrent(), TIME_SECONDS), "] Account: Balance=", balance, " Equity=", equity);
 }
 
 //+------------------------------------------------------------------+
