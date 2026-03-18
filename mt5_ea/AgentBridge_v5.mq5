@@ -256,8 +256,8 @@ string CleanSymbolName(string sym)
     // Remove common broker suffixes
     string result = sym;
     
-    string suffixes[] = {".s", ".pro", ".r", "_SB", ".i", ".e", ".m", ".a", ".b", 
-                         "-ECN", ".ecn", ".raw", ".std", "#", "+"};
+    string suffixes[] = {".ecn", ".ECN", "-ECN", ".s", ".pro", ".r", "_SB", ".i", ".e", ".m", ".a", ".b", 
+                         ".raw", ".std", "#", "+"};
     
     for(int i = 0; i < ArraySize(suffixes); i++)
     {
