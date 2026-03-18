@@ -14,6 +14,7 @@ load_dotenv(env_path)
 import json
 import asyncio
 import httpx
+import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple, Union
@@ -21,6 +22,11 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, FileResponse
 from pydantic import BaseModel
 from enum import Enum
+
+# Configure logging to suppress noisy HTTP logs
+logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 # Import rich dashboard
 try:
@@ -1948,4 +1954,4 @@ async def get_performance_metrics():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8000, access_log=False)

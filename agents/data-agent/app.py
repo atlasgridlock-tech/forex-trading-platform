@@ -28,7 +28,11 @@ from shared import (
     internal_symbol as shared_internal_symbol,
     FOREX_SYMBOLS,
     ChatRequest,
+    configure_logging,
 )
+
+# Configure logging to suppress noisy HTTP logs
+configure_logging("Curator")
 
 # TimescaleDB integration
 try:
@@ -1273,4 +1277,4 @@ async def get_latest_historical_candle(symbol: str, timeframe: str):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8000, access_log=False)

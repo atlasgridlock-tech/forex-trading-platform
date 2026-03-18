@@ -8,10 +8,15 @@ import asyncio
 import httpx
 import json
 import hashlib
+import logging
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, Callable
 from functools import wraps
 import redis.asyncio as redis
+
+# Suppress noisy HTTP logs
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 # Debug/verbose mode - set DEBUG_HTTP=1 to see connection errors
 DEBUG_HTTP = os.getenv("DEBUG_HTTP", "0") == "1"

@@ -24,8 +24,33 @@ Usage:
         
         # Pub/Sub
         AgentPubSub,
+        
+        # Logging
+        configure_logging,
     )
 """
+
+import logging
+
+def configure_logging(agent_name: str = "Agent"):
+    """Configure logging to suppress noisy HTTP request logs."""
+    # Suppress uvicorn access logs
+    logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+    
+    # Suppress httpx request logs
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    
+    # Suppress httpcore logs
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    
+    # Keep uvicorn error logs
+    logging.getLogger("uvicorn.error").setLevel(logging.INFO)
+    
+    # Optional: configure basic format
+    logging.basicConfig(
+        level=logging.INFO,
+        format=f'[{agent_name}] %(message)s'
+    )
 
 from .utils import (
     # Symbol utilities
@@ -123,6 +148,9 @@ __all__ = [
     "post_json",
     "get_agent_url",
     "parse_mt5_timestamp",
+    
+    # Logging
+    "configure_logging",
     
     # Output
     "AgentOutput",
