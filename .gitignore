@@ -42,9 +42,10 @@ credentials/
 data/cache/
 data/historical/
 
-# MT5 files
+# MT5 files (compiled only, keep source)
 *.ex5
-*.mq5
+# Allow EA source files in mt5_ea folder
+!mt5_ea/*.mq5
 
 # Temp
 tmp/
