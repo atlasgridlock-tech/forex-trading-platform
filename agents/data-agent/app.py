@@ -53,6 +53,9 @@ ORCHESTRATOR_URL = get_agent_url("orchestrator")
 QUALITY_THRESHOLD = float(os.getenv("QUALITY_THRESHOLD", "0.7"))
 WORKSPACE = Path("/app/workspace")
 
+# Track if we've done the initial load (to reduce log spam)
+_initial_load_done = False
+
 # MT5 data paths - use environment variable or default
 MT5_DATA_PATH = Path(os.getenv("MT5_DATA_PATH", "/app/mt5_data"))
 print(f"[Curator] MT5 data path: {MT5_DATA_PATH}")
@@ -331,7 +334,8 @@ async def ingest_market_data():
                     except (ValueError, IndexError):
                         continue
                         
-            print(f"[Curator] Loaded market data: {len(market_data)} symbols")
+            if not _initial_load_done:
+                print(f"[Curator] Loaded market data: {len(market_data)} symbols")
         except Exception as e:
             print(f"[Curator] Error reading market data: {e}")
     
@@ -341,17 +345,20 @@ async def ingest_market_data():
 
 async def ingest_candle_data():
     """Ingest candle data from MT5 files - TAB separated."""
+    global _initial_load_done
     candle_data = defaultdict(lambda: defaultdict(list))
     
-    print(f"[Curator] Reading candle file: {CANDLE_FILE}, exists: {CANDLE_FILE.exists()}")
-    print(f"[Curator] SYMBOL_SUFFIX: '{SYMBOL_SUFFIX}'")
+    if not _initial_load_done:
+        print(f"[Curator] Reading candle file: {CANDLE_FILE}, exists: {CANDLE_FILE.exists()}")
+        print(f"[Curator] SYMBOL_SUFFIX: '{SYMBOL_SUFFIX}'")
     
     if CANDLE_FILE.exists():
         try:
             with open(CANDLE_FILE, 'r', encoding='utf-8', errors='ignore') as f:
                 lines = f.readlines()
                 
-                print(f"[Curator] Read {len(lines)} lines from candle file")
+                if not _initial_load_done:
+                    print(f"[Curator] Read {len(lines)} lines from candle file")
                 
                 matched = 0
                 # Skip header
@@ -401,9 +408,12 @@ async def ingest_candle_data():
                     except (ValueError, IndexError) as e:
                         continue
                 
-                print(f"[Curator] Matched {matched} candles")
+                if not _initial_load_done:
+                    print(f"[Curator] Matched {matched} candles")
             total_bars = sum(len(tfs) for sym in candle_data.values() for tfs in sym.values())
-            print(f"[Curator] Loaded candles: {total_bars} bars")
+            if not _initial_load_done:
+                print(f"[Curator] Loaded candles: {total_bars} bars")
+                _initial_load_done = True  # Mark initial load done
         except Exception as e:
             print(f"[Curator] Error reading candle data: {e}")
     

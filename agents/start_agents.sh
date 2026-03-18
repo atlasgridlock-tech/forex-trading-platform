@@ -77,8 +77,8 @@ start_agent() {
     # Create workspace if needed
     mkdir -p workspace/memory 2>/dev/null || true
     
-    # Start agent in background with PYTHONPATH set
-    PYTHONPATH="$SCRIPT_DIR:$PYTHONPATH" uvicorn app:app --host 0.0.0.0 --port $port 2>&1 &
+    # Start agent in background with PYTHONPATH set (--no-access-log to reduce noise)
+    PYTHONPATH="$SCRIPT_DIR:$PYTHONPATH" uvicorn app:app --host 0.0.0.0 --port $port --no-access-log 2>&1 &
     local pid=$!
     echo "  $name PID: $pid"
     
