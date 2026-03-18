@@ -13,6 +13,9 @@ from typing import Dict, Any, Optional, Callable
 from functools import wraps
 import redis.asyncio as redis
 
+# Debug/verbose mode - set DEBUG_HTTP=1 to see connection errors
+DEBUG_HTTP = os.getenv("DEBUG_HTTP", "0") == "1"
+
 
 # ═══════════════════════════════════════════════════════════════
 # HTTP CLIENT POOL
@@ -71,6 +74,7 @@ async def pooled_get(
     GET request using pooled connection with retry logic.
     Uses exponential backoff: 0.5s, 1s, 2s delays between retries.
     Returns JSON response or None on error.
+    Set DEBUG_HTTP=1 to see connection error logs.
     """
     last_error = None
     
@@ -85,7 +89,8 @@ async def pooled_get(
                 last_error = f"HTTP {response.status_code}"
             else:
                 # Client error (4xx) - don't retry
-                print(f"[HTTPPool] GET {url} returned {response.status_code}")
+                if DEBUG_HTTP:
+                    print(f"[HTTPPool] GET {url} returned {response.status_code}")
                 return None
         except (httpx.ConnectError, httpx.ConnectTimeout) as e:
             last_error = str(e)
@@ -99,7 +104,7 @@ async def pooled_get(
             delay = backoff_base * (2 ** attempt)
             await asyncio.sleep(delay)
     
-    if last_error:
+    if last_error and DEBUG_HTTP:
         print(f"[HTTPPool] GET failed after {retries} attempts {url}: {last_error}")
     return None
 
@@ -115,6 +120,7 @@ async def pooled_post(
     POST request using pooled connection with retry logic.
     Uses exponential backoff: 0.5s, 1s, 2s delays between retries.
     Returns JSON response or None on error.
+    Set DEBUG_HTTP=1 to see connection error logs.
     """
     last_error = None
     
@@ -129,7 +135,8 @@ async def pooled_post(
                 last_error = f"HTTP {response.status_code}"
             else:
                 # Client error (4xx) - don't retry
-                print(f"[HTTPPool] POST {url} returned {response.status_code}")
+                if DEBUG_HTTP:
+                    print(f"[HTTPPool] POST {url} returned {response.status_code}")
                 return None
         except (httpx.ConnectError, httpx.ConnectTimeout) as e:
             last_error = str(e)
@@ -143,7 +150,7 @@ async def pooled_post(
             delay = backoff_base * (2 ** attempt)
             await asyncio.sleep(delay)
     
-    if last_error:
+    if last_error and DEBUG_HTTP:
         print(f"[HTTPPool] POST failed after {retries} attempts {url}: {last_error}")
     return None
 

@@ -210,7 +210,9 @@ async def fetch_json(url: str, timeout: float = 5.0) -> Optional[dict]:
     except ImportError:
         pass
     except Exception as e:
-        print(f"[fetch_json] Pooled fetch error: {e}")
+        from .performance import DEBUG_HTTP
+        if DEBUG_HTTP:
+            print(f"[fetch_json] Pooled fetch error: {e}")
     
     # Fallback to direct client
     try:
@@ -219,7 +221,9 @@ async def fetch_json(url: str, timeout: float = 5.0) -> Optional[dict]:
             if response.status_code == 200:
                 return response.json()
     except Exception as e:
-        print(f"[fetch_json] Direct fetch error: {e}")
+        from .performance import DEBUG_HTTP
+        if DEBUG_HTTP:
+            print(f"[fetch_json] Direct fetch error: {e}")
     
     return None
 
