@@ -1040,7 +1040,7 @@ async def fetch_dashboard_data():
     confluence_data = {}
     for sym in SYMBOLS:
         # Get technical bias
-        tech_data = await fetch_agent_data("atlas", f"/api/analyze/{sym}")
+        tech_data = await fetch_agent_data("atlas", f"/api/analysis/{sym}")
         # Get structure
         struct_data = await fetch_agent_data("architect", f"/api/structure/{sym}")
         # Get regime

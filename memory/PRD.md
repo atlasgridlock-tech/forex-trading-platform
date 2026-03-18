@@ -48,6 +48,13 @@ Build a 15-agent forex trading platform running on user's local Mac mini with:
 - [x] **P1**: Inter-agent retry logic with exponential backoff (0.5s, 1s, 2s)
 - [x] **P2**: Health checks in start_agents.sh (waits for `/api/status` before next tier)
 - [x] **AUTO-TRADING**: Full auto-execution pipeline (Orchestrator → Executor → MT5)
+- [x] **FIX (Dec 17)**: Fixed broken API endpoints in inter-agent communication:
+  - `orchestrator-agent`: `/api/analyze/{sym}` → `/api/analysis/{sym}` (technical-agent)
+  - `strategy-agent`: `/api/relative/{symbol}` → `/api/pair/{symbol}` (macro-agent)
+- [x] **FIX (Dec 17)**: Improved Myfxbook API caching in sentiment-agent:
+  - Increased cache TTL from 5 to 10 minutes
+  - Added session reuse (30-minute session TTL)
+  - Better fallback behavior when rate-limited
 
 ## Auto-Trading Configuration
 - `AUTO_TRADE_ENABLED=true` - Enable/disable auto-execution (default: true)
@@ -79,21 +86,22 @@ Example: $10,000 account, 1% risk, 30 pip SL on EURUSD
 ## Known Issues
 - [FIXED] News-agent showing fallback data instead of live calendar
 - [FIXED] Inter-agent communication errors (added retry logic)
+- [FIXED] API endpoint mismatches causing 404 errors in trading pipeline
 
 ## Prioritized Backlog
 
 ### P0 - Critical
-- End-to-end trading loop verification
+- End-to-end trading loop verification (user needs to restart agents and verify trades generate)
 
 ### P1 - High
-- Add retry logic/health checks for inter-agent communication
-- Robust error handling in start_agents.sh
+- None (API fixes completed)
 
 ### P2 - Medium
 - ATR-based trailing stop enhancements
-- Clean up bare `except` clauses in performance.py
+- Clean up bare `except` clauses in performance.py (7 instances)
 
 ### P3 - Low/Future
 - Advanced trailing strategies
 - Performance optimization
+- Multi-timeframe confluence weighting
 - Documentation updates

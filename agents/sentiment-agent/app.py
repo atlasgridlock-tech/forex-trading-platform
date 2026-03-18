@@ -41,14 +41,15 @@ MYFXBOOK_PASSWORD = os.getenv("MYFXBOOK_PASSWORD", "")
 # Myfxbook session management
 myfxbook_session: str = ""
 myfxbook_session_time: datetime = None
+MYFXBOOK_SESSION_TTL_MINUTES = 30  # Session valid for 30 minutes
 
 SYMBOLS = FOREX_SYMBOLS
 
-# Sentiment cache with TTL
+# Sentiment cache with TTL - INCREASED to reduce API calls
 sentiment_data: Dict[str, dict] = {}
 retail_positioning_cache: Dict[str, dict] = {}
 retail_cache_time: datetime = None
-CACHE_TTL_MINUTES = 5
+CACHE_TTL_MINUTES = 10  # Increased from 5 to 10 minutes to reduce API rate limit hits
 
 # Using ChatRequest from shared module
 
@@ -96,12 +97,13 @@ FALLBACK_POSITIONING = {
 from urllib.parse import unquote
 
 async def fetch_myfxbook_sentiment() -> Dict[str, dict]:
-    """Fetch real retail positioning data from Myfxbook API."""
-    global retail_positioning_cache, retail_cache_time
+    """Fetch real retail positioning data from Myfxbook API with session reuse."""
+    global retail_positioning_cache, retail_cache_time, myfxbook_session, myfxbook_session_time
     
-    # Check cache
+    # Check cache first - if data is fresh, return it immediately
     if retail_cache_time and (datetime.utcnow() - retail_cache_time).total_seconds() < CACHE_TTL_MINUTES * 60:
         if retail_positioning_cache:
+            print(f"[Pulse] 📦 Using cached sentiment data ({(datetime.utcnow() - retail_cache_time).total_seconds():.0f}s old)")
             return retail_positioning_cache
     
     if not MYFXBOOK_EMAIL or not MYFXBOOK_PASSWORD:
@@ -113,27 +115,54 @@ async def fetch_myfxbook_sentiment() -> Dict[str, dict]:
         from shared import get_pooled_client
         client = await get_pooled_client()
         
-        # Login first
-        login_url = f"https://www.myfxbook.com/api/login.json?email={MYFXBOOK_EMAIL}&password={MYFXBOOK_PASSWORD}"
-        login_response = await client.get(login_url, timeout=20.0)
+        # Check if we have a valid session
+        session = myfxbook_session
+        need_login = True
         
-        if login_response.status_code != 200:
-            print(f"[Pulse] ❌ Myfxbook login failed: HTTP {login_response.status_code}")
-            return FALLBACK_POSITIONING
+        if session and myfxbook_session_time:
+            session_age = (datetime.utcnow() - myfxbook_session_time).total_seconds()
+            if session_age < MYFXBOOK_SESSION_TTL_MINUTES * 60:
+                need_login = False
+                print(f"[Pulse] 🔑 Reusing existing Myfxbook session ({session_age:.0f}s old)")
         
-        login_data = login_response.json()
-        if login_data.get("error"):
-            print(f"[Pulse] ❌ Myfxbook login error: {login_data.get('message')}")
-            return FALLBACK_POSITIONING
+        # Login if needed
+        if need_login:
+            login_url = f"https://www.myfxbook.com/api/login.json?email={MYFXBOOK_EMAIL}&password={MYFXBOOK_PASSWORD}"
+            login_response = await client.get(login_url, timeout=20.0)
+            
+            if login_response.status_code != 200:
+                print(f"[Pulse] ❌ Myfxbook login failed: HTTP {login_response.status_code}")
+                # Return cached data if available, otherwise fallback
+                if retail_positioning_cache:
+                    print("[Pulse] ⚠️ Using stale cached data due to login failure")
+                    return retail_positioning_cache
+                return FALLBACK_POSITIONING
+            
+            login_data = login_response.json()
+            if login_data.get("error"):
+                error_msg = login_data.get('message', 'Unknown error')
+                print(f"[Pulse] ❌ Myfxbook login error: {error_msg}")
+                # Check for rate limit error
+                if "limit" in error_msg.lower():
+                    print("[Pulse] ⚠️ API limit reached - extending cache TTL")
+                    # Return cached data if available
+                    if retail_positioning_cache:
+                        return retail_positioning_cache
+                return FALLBACK_POSITIONING
+            
+            session = login_data.get("session", "")
+            if not session:
+                print("[Pulse] ❌ No session token received")
+                if retail_positioning_cache:
+                    return retail_positioning_cache
+                return FALLBACK_POSITIONING
+            
+            # Save session for reuse
+            myfxbook_session = session
+            myfxbook_session_time = datetime.utcnow()
+            print(f"[Pulse] ✅ Myfxbook login successful (new session)")
         
-        session = login_data.get("session", "")
-        if not session:
-            print("[Pulse] ❌ No session token received")
-            return FALLBACK_POSITIONING
-        
-        print(f"[Pulse] ✅ Myfxbook login successful")
-        
-        # Fetch sentiment immediately with the session
+        # Fetch sentiment with the session
         sentiment_url = f"https://www.myfxbook.com/api/get-community-outlook.json?session={session}"
         response = await client.get(sentiment_url, timeout=20.0)
         
@@ -172,14 +201,23 @@ async def fetch_myfxbook_sentiment() -> Dict[str, dict]:
                 else:
                     print("[Pulse] ⚠️ No matching symbols in Myfxbook response")
             else:
-                print(f"[Pulse] ❌ Myfxbook API error: {data.get('message')}")
+                error_msg = data.get('message', 'Unknown error')
+                print(f"[Pulse] ❌ Myfxbook API error: {error_msg}")
+                # Invalidate session if it failed
+                if "session" in error_msg.lower() or "invalid" in error_msg.lower():
+                    myfxbook_session = ""
+                    myfxbook_session_time = None
         else:
             print(f"[Pulse] ❌ Myfxbook API failed: HTTP {response.status_code}")
                 
     except Exception as e:
         print(f"[Pulse] ❌ Myfxbook API exception: {e}")
     
-    # Return fallback if API fails
+    # Return cached data if available, otherwise fallback
+    if retail_positioning_cache:
+        print("[Pulse] ⚠️ Using cached sentiment data (API error)")
+        return retail_positioning_cache
+    
     print("[Pulse] ⚠️ Using fallback sentiment data")
     return FALLBACK_POSITIONING
 
@@ -1093,7 +1131,8 @@ async def background_analysis():
             sentiment_data[symbol] = analysis
             await send_to_orchestrator(symbol, analysis)
         
-        await asyncio.sleep(300)  # Update every 5 minutes
+        # Wait for cache TTL + buffer to avoid hammering the API
+        await asyncio.sleep(CACHE_TTL_MINUTES * 60 + 30)  # Match cache TTL + 30s buffer
 
 
 # Using shared call_claude - removed duplicate implementation

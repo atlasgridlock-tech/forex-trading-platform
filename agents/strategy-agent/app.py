@@ -653,7 +653,7 @@ async def evaluate_strategies(symbol: str) -> dict:
     regime_data = await fetch_json(f"{REGIME_URL}/api/regime/{symbol}")
     technical_data = await fetch_json(f"{TECHNICAL_URL}/api/analysis/{symbol}")
     structure_data = await fetch_json(f"{STRUCTURE_URL}/api/structure/{symbol}")
-    macro_data = await fetch_json(f"{MACRO_URL}/api/relative/{symbol}")
+    macro_data = await fetch_json(f"{MACRO_URL}/api/pair/{symbol}")
     sentiment_data = await fetch_json(f"{SENTIMENT_URL}/api/sentiment/{symbol}")
     news_data = await fetch_json(f"{NEWS_URL}/api/risk/{symbol}")
     curator_data = await fetch_json(f"{CURATOR_URL}/api/snapshot/symbol/{symbol}")
