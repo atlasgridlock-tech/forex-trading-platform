@@ -47,6 +47,20 @@ Build a 15-agent forex trading platform running on user's local Mac mini with:
 - [x] **FIX**: News-agent calendar race condition (background_monitoring now uses async live data)
 - [x] **P1**: Inter-agent retry logic with exponential backoff (0.5s, 1s, 2s)
 - [x] **P2**: Health checks in start_agents.sh (waits for `/api/status` before next tier)
+- [x] **AUTO-TRADING**: Full auto-execution pipeline (Orchestrator → Executor → MT5)
+
+## Auto-Trading Configuration
+- `AUTO_TRADE_ENABLED=true` - Enable/disable auto-execution (default: true)
+- `DEFAULT_LOT_SIZE=0.01` - Default position size
+- `MAX_LOT_SIZE=0.1` - Safety cap on lot size
+- Signal cooldown: 60 minutes (prevents duplicate executions)
+- Thresholds: Score >= 75 executes, Score >= 60 adds to watchlist
+
+## Auto-Trading API Endpoints
+- `GET /api/auto-trade` - Check status and recent executions
+- `POST /api/auto-trade/toggle?enabled=true` - Enable/disable
+- `POST /api/auto-trade/lot-size?lot_size=0.02` - Set lot size
+- `POST /api/auto-trade/clear-cooldowns` - Reset signal cooldowns
 
 ## Known Issues
 - [FIXED] News-agent showing fallback data instead of live calendar

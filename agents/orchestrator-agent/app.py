@@ -116,6 +116,17 @@ CONFIG = {
     },
 }
 
+# ═══════════════════════════════════════════════════════════════
+# AUTO-TRADING CONFIGURATION
+# ═══════════════════════════════════════════════════════════════
+AUTO_TRADE_ENABLED = os.getenv("AUTO_TRADE_ENABLED", "true").lower() == "true"
+DEFAULT_LOT_SIZE = float(os.getenv("DEFAULT_LOT_SIZE", "0.01"))  # Minimum safe size
+MAX_LOT_SIZE = float(os.getenv("MAX_LOT_SIZE", "0.1"))  # Safety cap
+
+# Track executed signals to prevent duplicates
+executed_signals: Dict[str, datetime] = {}
+SIGNAL_COOLDOWN_MINUTES = 60  # Don't re-execute same signal within this window
+
 # In-memory storage
 decisions_log: List[dict] = []
 watchlist: Dict[str, dict] = {}
@@ -176,6 +187,71 @@ async def post_to_agent(agent: str, endpoint: str, data: dict, timeout: float = 
             log_message("nexus", agent, f"POST {endpoint}", "error", latency)
         print(f"Error posting to {agent}: {e}")
     return None
+
+
+async def route_to_executor(
+    symbol: str,
+    direction: str,  # "long" or "short"
+    entry_price: float,
+    stop_loss: float,
+    take_profit: float,
+    strategy: str,
+    confidence: int,
+) -> Optional[dict]:
+    """
+    Route a qualified trade signal to the Execution Agent.
+    Returns execution receipt or None if failed/blocked.
+    """
+    global executed_signals
+    
+    if not AUTO_TRADE_ENABLED:
+        print(f"[Nexus] ⚠️ Auto-trade DISABLED - would execute {direction.upper()} {symbol}")
+        return None
+    
+    # Check signal cooldown (prevent duplicate executions)
+    signal_key = f"{symbol}_{direction}"
+    now = datetime.utcnow()
+    
+    if signal_key in executed_signals:
+        last_exec = executed_signals[signal_key]
+        minutes_since = (now - last_exec).total_seconds() / 60
+        if minutes_since < SIGNAL_COOLDOWN_MINUTES:
+            print(f"[Nexus] ⏳ Signal cooldown: {symbol} {direction} executed {minutes_since:.0f}m ago")
+            return None
+    
+    # Calculate lot size (could be enhanced with risk-based sizing)
+    lot_size = DEFAULT_LOT_SIZE
+    
+    # Build order request
+    order = {
+        "symbol": symbol,
+        "direction": direction,
+        "lot_size": lot_size,
+        "entry_price": entry_price,  # None for market order
+        "stop_loss": stop_loss,
+        "take_profit": take_profit,
+        "comment": f"Nexus|{strategy}|{confidence}%",
+    }
+    
+    print(f"[Nexus] 🚀 AUTO-EXECUTING: {direction.upper()} {symbol} @ {entry_price or 'MARKET'}")
+    print(f"        SL: {stop_loss} | TP: {take_profit} | Size: {lot_size} lots")
+    
+    # Send to Executor
+    result = await post_to_agent("executor", "/api/execute", order, timeout=30.0)
+    
+    if result:
+        status = result.get("status", "UNKNOWN")
+        if status == "EXECUTED":
+            print(f"[Nexus] ✅ ORDER FILLED: {result.get('order_id')} - Health: {result.get('health_score', 0)}/100")
+            executed_signals[signal_key] = now
+        elif status == "REJECTED":
+            print(f"[Nexus] ❌ ORDER REJECTED: {result.get('reason', 'Unknown')}")
+        else:
+            print(f"[Nexus] ⚠️ ORDER STATUS: {status} - {result.get('error', result.get('reason', ''))}")
+        return result
+    else:
+        print(f"[Nexus] ❌ Failed to reach Executor agent")
+        return None
 
 
 async def check_hard_gates(symbol: str, direction: str, strategy: str, stop_loss: float) -> Tuple[bool, List[dict]]:
@@ -732,6 +808,27 @@ async def make_decision(candidate: TradeCandidate) -> dict:
             "confidence": total_score,
             "entry_reason": decision_record["reason"],
         })
+        
+        # ═══════════════════════════════════════════════════════════
+        # AUTO-EXECUTION: Route to Executor agent
+        # ═══════════════════════════════════════════════════════════
+        exec_result = await route_to_executor(
+            symbol=symbol,
+            direction=direction,
+            entry_price=candidate.entry_price,
+            stop_loss=candidate.stop_loss,
+            take_profit=candidate.take_profit,
+            strategy=strategy,
+            confidence=total_score,
+        )
+        
+        if exec_result:
+            decision_record["execution"] = {
+                "order_id": exec_result.get("order_id"),
+                "status": exec_result.get("status"),
+                "fill_price": exec_result.get("fill_price"),
+                "health_score": exec_result.get("health_score"),
+            }
     
     return decision_record
 
@@ -1354,6 +1451,57 @@ async def update_config(new_config: dict):
     global CONFIG
     CONFIG.update(new_config)
     return {"status": "updated", "config": CONFIG}
+
+
+# ═══════════════════════════════════════════════════════════════
+# AUTO-TRADING CONTROL ENDPOINTS
+# ═══════════════════════════════════════════════════════════════
+
+@app.get("/api/auto-trade")
+async def get_auto_trade_status():
+    """Get auto-trading status and recent executions."""
+    return {
+        "enabled": AUTO_TRADE_ENABLED,
+        "default_lot_size": DEFAULT_LOT_SIZE,
+        "max_lot_size": MAX_LOT_SIZE,
+        "signal_cooldown_minutes": SIGNAL_COOLDOWN_MINUTES,
+        "recent_executions": [
+            {"signal": k, "executed_at": v.isoformat()}
+            for k, v in sorted(executed_signals.items(), key=lambda x: x[1], reverse=True)[:10]
+        ],
+        "thresholds": CONFIG["decision_thresholds"],
+    }
+
+
+@app.post("/api/auto-trade/toggle")
+async def toggle_auto_trade(enabled: bool = True):
+    """Enable or disable auto-trading."""
+    global AUTO_TRADE_ENABLED
+    AUTO_TRADE_ENABLED = enabled
+    status = "ENABLED" if enabled else "DISABLED"
+    print(f"[Nexus] 🔔 Auto-trading {status}")
+    return {"auto_trade_enabled": AUTO_TRADE_ENABLED, "message": f"Auto-trading {status}"}
+
+
+@app.post("/api/auto-trade/lot-size")
+async def set_lot_size(lot_size: float):
+    """Set default lot size for auto-trades."""
+    global DEFAULT_LOT_SIZE
+    if lot_size <= 0 or lot_size > MAX_LOT_SIZE:
+        raise HTTPException(status_code=400, detail=f"Lot size must be between 0.01 and {MAX_LOT_SIZE}")
+    DEFAULT_LOT_SIZE = lot_size
+    print(f"[Nexus] 📊 Default lot size set to {lot_size}")
+    return {"default_lot_size": DEFAULT_LOT_SIZE}
+
+
+@app.post("/api/auto-trade/clear-cooldowns")
+async def clear_signal_cooldowns():
+    """Clear all signal cooldowns (allows re-execution of signals)."""
+    global executed_signals
+    count = len(executed_signals)
+    executed_signals = {}
+    print(f"[Nexus] 🔄 Cleared {count} signal cooldowns")
+    return {"cleared": count}
 
 
 # Storage for agent data ingestion
