@@ -114,18 +114,31 @@ def main():
     
     if not MT5_FILES_DIR.exists():
         print(f"ERROR: MT5 files directory not found!")
+        print(f"Looking for: {MT5_FILES_DIR}")
         return
     
-    print("Waiting for MT5 data...")
-    print("Make sure EA v4.0 is compiled and attached!")
+    # Check if files exist
+    print(f"Tick file exists: {TICK_FILE.exists()}")
+    print(f"Candle file exists: {CANDLE_FILE.exists()}")
+    
+    if TICK_FILE.exists():
+        print(f"Tick file size: {TICK_FILE.stat().st_size} bytes")
+    if CANDLE_FILE.exists():
+        print(f"Candle file size: {CANDLE_FILE.stat().st_size} bytes")
+    
+    print("-" * 60)
+    print("Starting continuous updates...")
     print("-" * 60)
     
     last_tick_mtime = 0
     last_candle_mtime = 0
     symbols_seen = set()
+    update_count = 0
     
     while True:
         try:
+            update_count += 1
+            
             # Process tick data
             if TICK_FILE.exists():
                 mtime = TICK_FILE.stat().st_mtime
@@ -134,11 +147,13 @@ def main():
                     data = read_tick_data()
                     if data and data.get("symbols"):
                         symbols = list(data["symbols"].keys())
-                        new_symbols = set(symbols) - symbols_seen
-                        if new_symbols:
-                            print(f"[{datetime.now().strftime('%H:%M:%S')}] Symbols: {', '.join(symbols)}")
-                            symbols_seen.update(new_symbols)
-                        send_ticks(data)
+                        print(f"[{datetime.now().strftime('%H:%M:%S')}] 💹 Sending {len(symbols)} symbols: {', '.join(symbols[:5])}...")
+                        if send_ticks(data):
+                            print(f"[{datetime.now().strftime('%H:%M:%S')}] ✅ Tick data sent successfully")
+                        else:
+                            print(f"[{datetime.now().strftime('%H:%M:%S')}] ❌ Failed to send tick data")
+                    else:
+                        print(f"[{datetime.now().strftime('%H:%M:%S')}] ⚠️ No symbols in tick data")
             
             # Process candle data
             if CANDLE_FILE.exists():
@@ -152,14 +167,17 @@ def main():
                             sum(len(tfs) for tfs in symbol_data.values())
                             for symbol_data in candles.values()
                         )
-                        # Get timeframes from first symbol
-                        first_symbol = list(candles.keys())[0] if candles else None
-                        tfs = list(candles[first_symbol].keys()) if first_symbol else []
-                        
+                        print(f"[{datetime.now().strftime('%H:%M:%S')}] 📊 Sending {total} candles for {len(candles)} symbols...")
                         if send_candles(candles):
-                            print(f"[{datetime.now().strftime('%H:%M:%S')}] 📊 Sent {total} candles | TFs: {', '.join(tfs)} | {len(candles)} symbols")
+                            print(f"[{datetime.now().strftime('%H:%M:%S')}] ✅ Candle data sent successfully")
                         else:
-                            print(f"[{datetime.now().strftime('%H:%M:%S')}] ⚠️  Candle endpoint not ready")
+                            print(f"[{datetime.now().strftime('%H:%M:%S')}] ❌ Failed to send candle data")
+                    else:
+                        print(f"[{datetime.now().strftime('%H:%M:%S')}] ⚠️ No candles read from file")
+            
+            # Print heartbeat every 10 iterations (5 seconds)
+            if update_count % 10 == 0:
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] 💓 Bridge running... (tick mtime: {last_tick_mtime:.0f}, candle mtime: {last_candle_mtime:.0f})")
             
             time.sleep(0.5)
             
