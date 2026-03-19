@@ -247,7 +247,7 @@ async def fetch_upcoming_events_from_sentinel() -> Dict[str, List[dict]]:
 
 
 async def fetch_news_headlines() -> Dict[str, List[str]]:
-    """Fetch recent news headlines from Sentinel (News Agent)."""
+    """Fetch recent news headlines from Sentinel and classify by currency using Claude."""
     headlines_by_currency = {curr: [] for curr in CURRENCIES}
     
     try:
@@ -260,44 +260,112 @@ async def fetch_news_headlines() -> Dict[str, List[str]]:
                 # Process headlines - they may be in different formats
                 headlines_list = news_data if isinstance(news_data, list) else news_data.get("headlines", [])
                 
+                # Extract headline text
+                all_headlines = []
                 for item in headlines_list:
-                    # Handle both string headlines and dict objects
                     if isinstance(item, str):
                         headline = item
                     else:
                         headline = item.get("title") or item.get("headline", "")
-                    
-                    if not headline:
-                        continue
-                    
-                    # Map to currencies mentioned
-                    headline_upper = headline.upper()
-                    for curr in CURRENCIES:
-                        # Check for currency mentions
-                        currency_keywords = {
-                            "USD": ["FED", "FEDERAL RESERVE", "DOLLAR", "US ", "U.S.", "POWELL", "FOMC"],
-                            "EUR": ["ECB", "EURO", "EUROZONE", "LAGARDE", "GERMANY", "EUROPE", "FRANCE"],
-                            "GBP": ["BOE", "BANK OF ENGLAND", "POUND", "STERLING", "UK ", "BAILEY", "BRITAIN"],
-                            "JPY": ["BOJ", "BANK OF JAPAN", "YEN", "JAPAN", "UEDA", "TOKYO"],
-                            "CHF": ["SNB", "SWISS", "FRANC", "SWITZERLAND"],
-                            "CAD": ["BOC", "CANADA", "LOONIE", "MACKLEM", "OTTAWA"],
-                            "AUD": ["RBA", "AUSTRALIA", "AUSSIE", "SYDNEY"],
-                            "NZD": ["RBNZ", "NEW ZEALAND", "KIWI", "WELLINGTON"]
-                        }
-                        if any(kw in headline_upper for kw in currency_keywords.get(curr, [])):
-                            if headline not in headlines_by_currency[curr]:
-                                headlines_by_currency[curr].append(headline)
+                    if headline and len(headline) > 10:
+                        all_headlines.append(headline)
                 
+                if all_headlines:
+                    # Use Claude to classify headlines by currency
+                    headlines_by_currency = await classify_headlines_by_currency(all_headlines[:30])  # Limit to 30 for efficiency
+                    
                 total = sum(len(v) for v in headlines_by_currency.values())
-                print(f"[Oracle] 📰 Mapped {total} headlines to currencies from Sentinel")
+                print(f"[Oracle] 📰 Claude classified {total} headlines across {sum(1 for v in headlines_by_currency.values() if v)} currencies")
     except Exception as e:
         print(f"[Oracle] ⚠️ Could not fetch headlines from Sentinel: {e}")
     
     return headlines_by_currency
 
 
+async def classify_headlines_by_currency(headlines: List[str]) -> Dict[str, List[str]]:
+    """Use Claude to intelligently classify which headlines belong to which currency."""
+    result = {curr: [] for curr in CURRENCIES}
+    
+    if not headlines:
+        return result
+    
+    # Format headlines with numbers for reference
+    headlines_text = "\n".join([f"{i+1}. {h}" for i, h in enumerate(headlines)])
+    
+    prompt = f"""Classify these forex/financial news headlines by which currency they primarily relate to.
+Currencies: USD, EUR, GBP, JPY, CHF, CAD, AUD, NZD
+
+Headlines:
+{headlines_text}
+
+For each headline, identify the PRIMARY currency it impacts. A headline can relate to multiple currencies.
+Consider:
+- Central bank mentions (Fed=USD, ECB=EUR, BoE=GBP, BoJ=JPY, SNB=CHF, BoC=CAD, RBA=AUD, RBNZ=NZD)
+- Country economic data (US=USD, Eurozone=EUR, UK=GBP, Japan=JPY, etc.)
+- Currency pair mentions
+- Trade/tariff news affecting specific economies
+
+Respond ONLY with valid JSON in this exact format:
+{{"USD": [1, 5, 12], "EUR": [2, 8], "GBP": [3], "JPY": [], "CHF": [], "CAD": [7], "AUD": [4, 9], "NZD": []}}
+
+Use headline numbers (1-indexed). Include a headline in multiple currencies if relevant."""
+
+    try:
+        # Use a more concise system prompt to reduce tokens
+        response = await call_claude(
+            prompt, 
+            "You are a financial news classifier. Respond only with valid JSON mapping currencies to headline numbers.",
+            agent_name="Oracle"
+        )
+        
+        # Parse JSON from response
+        import re
+        json_match = re.search(r'\{[^}]+\}', response.replace('\n', ' '))
+        if json_match:
+            classification = json.loads(json_match.group())
+            
+            # Map headline numbers back to actual headlines
+            for currency, indices in classification.items():
+                if currency in result and isinstance(indices, list):
+                    for idx in indices:
+                        if isinstance(idx, int) and 1 <= idx <= len(headlines):
+                            result[currency].append(headlines[idx - 1])  # Convert 1-indexed to 0-indexed
+        
+        return result
+        
+    except Exception as e:
+        print(f"[Oracle] ⚠️ Headline classification error: {e}")
+        # Fallback to simple keyword matching if Claude fails
+        return fallback_keyword_classification(headlines)
+
+
+def fallback_keyword_classification(headlines: List[str]) -> Dict[str, List[str]]:
+    """Fallback keyword-based classification if Claude fails."""
+    result = {curr: [] for curr in CURRENCIES}
+    
+    currency_keywords = {
+        "USD": ["FED", "FEDERAL RESERVE", "DOLLAR", "US ", "U.S.", "POWELL", "FOMC", "AMERICA"],
+        "EUR": ["ECB", "EURO", "EUROZONE", "LAGARDE", "GERMANY", "EUROPE", "FRANCE", "ITALY"],
+        "GBP": ["BOE", "BANK OF ENGLAND", "POUND", "STERLING", "UK ", "BAILEY", "BRITAIN"],
+        "JPY": ["BOJ", "BANK OF JAPAN", "YEN", "JAPAN", "UEDA", "TOKYO"],
+        "CHF": ["SNB", "SWISS", "FRANC", "SWITZERLAND"],
+        "CAD": ["BOC", "CANADA", "LOONIE", "MACKLEM", "OTTAWA"],
+        "AUD": ["RBA", "AUSTRALIA", "AUSSIE", "SYDNEY"],
+        "NZD": ["RBNZ", "NEW ZEALAND", "KIWI", "WELLINGTON"]
+    }
+    
+    for headline in headlines:
+        headline_upper = headline.upper()
+        for curr, keywords in currency_keywords.items():
+            if any(kw in headline_upper for kw in keywords):
+                if headline not in result[curr]:
+                    result[curr].append(headline)
+    
+    return result
+
+
 async def analyze_cb_tone_from_news(currency: str, headlines: List[str]) -> dict:
-    """Use Claude to analyze central bank tone from recent headlines."""
+    """Use Claude to analyze central bank tone from ACTUAL recent headlines."""
     if not headlines:
         return {"cb_tone": "neutral", "confidence": 30}
     
@@ -312,21 +380,35 @@ async def analyze_cb_tone_from_news(currency: str, headlines: List[str]) -> dict
         "NZD": "Reserve Bank of New Zealand (RBNZ)"
     }
     
-    prompt = f"""Analyze these recent headlines about {currency} and the {cb_names.get(currency, 'central bank')}:
+    # Use the ACTUAL headlines passed in (max 10 for efficiency)
+    actual_headlines = headlines[:10]
+    headlines_text = "\n".join([f"- {h}" for h in actual_headlines])
+    
+    prompt = f"""Analyze these ACTUAL recent news headlines about {currency} and the {cb_names.get(currency, 'central bank')}:
 
-{chr(10).join(f'- {h}' for h in headlines[:10])}
+{headlines_text}
 
-Based on these headlines, determine the current central bank tone/stance.
-Respond in this exact JSON format only:
-{{"cb_tone": "hawkish|slightly_hawkish|neutral|slightly_dovish|dovish", "rate_trend": "hiking|peaked|cutting|bottomed", "confidence": 0-100, "key_point": "one sentence summary"}}"""
+Based on these real headlines, determine:
+1. Current central bank tone/stance (hawkish = wants higher rates, dovish = wants lower rates)
+2. Rate trend (are they hiking, peaked, cutting, or bottomed?)
+3. Your confidence level in this assessment
+
+Respond ONLY with valid JSON in this exact format:
+{{"cb_tone": "hawkish|slightly_hawkish|neutral|slightly_dovish|dovish", "rate_trend": "hiking|peaked|cutting|bottomed", "confidence": 0-100, "key_point": "brief one sentence summary of the central bank's current stance"}}"""
     
     try:
-        response = await call_claude(prompt, "You are a central bank policy analyst. Respond only with valid JSON.", agent_name="Oracle")
+        response = await call_claude(
+            prompt, 
+            "You are a central bank policy analyst. Analyze the headlines and respond only with valid JSON.",
+            agent_name="Oracle"
+        )
         # Parse JSON from response
         import re
-        json_match = re.search(r'\{[^}]+\}', response)
+        json_match = re.search(r'\{[^}]+\}', response.replace('\n', ' '))
         if json_match:
-            return json.loads(json_match.group())
+            result = json.loads(json_match.group())
+            print(f"[Oracle] 🏦 {currency} CB tone: {result.get('cb_tone')} ({result.get('confidence')}% confidence)")
+            return result
     except Exception as e:
         print(f"[Oracle] ⚠️ CB tone analysis error for {currency}: {e}")
     
