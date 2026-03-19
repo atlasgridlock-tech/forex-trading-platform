@@ -331,7 +331,11 @@ def update_macro_data_from_fred(fred_data: Dict[str, dict]):
 # Cache for dynamic narratives
 dynamic_narratives: Dict[str, dict] = {}
 narrative_cache_time: datetime = None
-NARRATIVE_CACHE_HOURS = 1  # Refresh narratives every hour
+NARRATIVE_CACHE_HOURS = 2  # Refresh every 2 hours (cost optimization)
+
+# Model selection for cost optimization
+HAIKU_MODEL = "claude-3-5-haiku-20241022"  # Cheaper for classification tasks
+SONNET_MODEL = "claude-sonnet-4-20250514"  # Better quality for narratives
 
 # Agent URLs
 SENTINEL_URL = get_agent_url("news")  # News agent has economic calendar AND headlines
@@ -481,7 +485,7 @@ def filter_quality_headlines(headlines_list: List) -> List[str]:
 
 
 async def classify_headlines_by_currency(headlines: List[str]) -> Dict[str, List[str]]:
-    """Use Claude to intelligently classify which headlines belong to which currency."""
+    """Use Claude Haiku to classify which headlines belong to which currency (cost-optimized)."""
     result = {curr: [] for curr in CURRENCIES}
     
     if not headlines:
@@ -509,11 +513,13 @@ Respond ONLY with valid JSON in this exact format:
 Use headline numbers (1-indexed). Include a headline in multiple currencies if relevant."""
 
     try:
-        # Use a more concise system prompt to reduce tokens
+        # Use HAIKU for classification (cheaper)
         response = await call_claude(
             prompt, 
             "You are a financial news classifier. Respond only with valid JSON mapping currencies to headline numbers.",
-            agent_name="Oracle"
+            agent_name="Oracle",
+            model=HAIKU_MODEL,  # Cost optimization
+            max_tokens=512  # Classification doesn't need many tokens
         )
         
         # Parse JSON from response
