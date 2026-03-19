@@ -869,7 +869,39 @@ async def home():
 
 @app.post("/chat")
 async def chat(request: ChatRequest):
-    context = f"Currency Profiles:\n{json.dumps(currency_profiles, indent=2, default=str)[:4000]}\n\nPair Analysis:\n{json.dumps(pair_analysis, indent=2, default=str)[:4000]}"
+    # Build a more compact but complete context for Claude
+    # Currency profiles - just the key metrics
+    currency_summary = {}
+    for curr, data in currency_profiles.items():
+        currency_summary[curr] = {
+            "score": data.get("fundamental_score", 0),
+            "stance": data.get("stance", "neutral"),
+            "rate": data.get("interest_rate", 0),
+            "momentum": data.get("momentum_score", 50)
+        }
+    
+    # Pair analysis - key fields only
+    pair_summary = {}
+    for pair, data in pair_analysis.items():
+        pair_summary[pair] = {
+            "bias": data.get("pair_bias", "neutral"),
+            "confidence": data.get("confidence", 50),
+            "base_score": data.get("base_score", 50),
+            "quote_score": data.get("quote_score", 50),
+            "differential": data.get("macro_differential", 0),
+            "rate_diff": data.get("rate_differential", 0)
+        }
+    
+    context = f"""You are Oracle, the fundamental macro analysis agent for a forex trading system.
+
+Currency Macro Profiles (8 currencies):
+{json.dumps(currency_summary, indent=2)}
+
+Pair-Relative Analysis (9 pairs):
+{json.dumps(pair_summary, indent=2)}
+
+Answer questions about macro fundamentals, currency strength, and pair biases based on this data."""
+    
     response = await call_claude(request.message, context, agent_name=AGENT_NAME)
     return {"response": response}
 
