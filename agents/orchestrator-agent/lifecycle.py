@@ -705,12 +705,12 @@ class LifecycleManager:
         Rule: Score ≥75 = EXECUTE, 60-74 = WATCHLIST, <60 = NO_TRADE
         """
         # Call the orchestrator's own confluence endpoint
-        # Since we're inside the orchestrator, we can use localhost
+        # The orchestrator runs on port 3020
         import httpx
         try:
             async with httpx.AsyncClient() as client:
                 resp = await client.get(
-                    f"http://localhost:8000/api/confluence/{symbol}",
+                    f"http://localhost:3020/api/confluence/{symbol}",
                     params={"direction": direction},
                     timeout=10.0
                 )
