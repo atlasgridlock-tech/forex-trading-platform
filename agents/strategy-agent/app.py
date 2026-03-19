@@ -1339,6 +1339,7 @@ async def get_setups(symbol: str):
             "direction": direction,
             "direction_reason": direction_reason,  # Why this direction was chosen
             "score": strategy["score"],
+            "qualified": True,  # These setups are pre-filtered to only include qualified ones
             "entry": entry_params["entry"],
             "entry_type": entry_params.get("entry_type", "market"),  # "market" or "limit"
             "pullback_level": entry_params.get("pullback_level"),  # EMA level for limit orders
