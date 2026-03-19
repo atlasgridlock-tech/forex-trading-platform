@@ -191,6 +191,222 @@ def update_macro_data_from_fred(fred_data: Dict[str, dict]):
 
 
 # ═══════════════════════════════════════════════════════════════
+# DYNAMIC DATA - Live Events, Trends & Narratives
+# ═══════════════════════════════════════════════════════════════
+
+# Cache for dynamic narratives
+dynamic_narratives: Dict[str, dict] = {}
+narrative_cache_time: datetime = None
+NARRATIVE_CACHE_HOURS = 1  # Refresh narratives every hour
+
+# Agent URLs
+SENTINEL_URL = get_agent_url("news")  # News agent has economic calendar
+PULSE_URL = get_agent_url("sentiment")  # Sentiment agent has news headlines
+
+
+async def fetch_upcoming_events_from_sentinel() -> Dict[str, List[dict]]:
+    """Fetch upcoming economic events from Sentinel (News Agent)."""
+    events_by_currency = {curr: [] for curr in CURRENCIES}
+    
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            # Fetch calendar from Sentinel
+            response = await client.get(f"{SENTINEL_URL}/api/calendar")
+            if response.status_code == 200:
+                calendar = response.json()
+                events = calendar.get("events", calendar.get("upcoming", []))
+                
+                now = datetime.utcnow()
+                for event in events:
+                    # Parse event date
+                    event_date_str = event.get("date") or event.get("datetime", "")
+                    try:
+                        if "T" in event_date_str:
+                            event_date = datetime.fromisoformat(event_date_str.replace("Z", ""))
+                        else:
+                            event_date = datetime.strptime(event_date_str, "%Y-%m-%d")
+                    except:
+                        continue
+                    
+                    # Only include events in next 14 days
+                    days_until = (event_date - now).days
+                    if 0 <= days_until <= 14:
+                        currency = event.get("currency", "").upper()
+                        if currency in events_by_currency:
+                            events_by_currency[currency].append({
+                                "event": event.get("title") or event.get("event", "Unknown"),
+                                "days": days_until,
+                                "impact": event.get("impact", "medium"),
+                                "date": event_date.strftime("%Y-%m-%d")
+                            })
+                
+                print(f"[Oracle] 📅 Loaded {sum(len(v) for v in events_by_currency.values())} upcoming events from Sentinel")
+    except Exception as e:
+        print(f"[Oracle] ⚠️ Could not fetch events from Sentinel: {e}")
+    
+    return events_by_currency
+
+
+async def fetch_news_headlines() -> Dict[str, List[str]]:
+    """Fetch recent news headlines from Pulse (Sentiment Agent)."""
+    headlines_by_currency = {curr: [] for curr in CURRENCIES}
+    
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            # Fetch news from Pulse
+            response = await client.get(f"{PULSE_URL}/api/news")
+            if response.status_code == 200:
+                news_data = response.json()
+                
+                # Process headlines
+                for item in news_data.get("headlines", news_data.get("news", [])):
+                    headline = item.get("title") or item.get("headline", "")
+                    
+                    # Map to currencies mentioned
+                    headline_upper = headline.upper()
+                    for curr in CURRENCIES:
+                        # Check for currency mentions
+                        currency_keywords = {
+                            "USD": ["FED", "FEDERAL RESERVE", "DOLLAR", "US ", "U.S.", "POWELL"],
+                            "EUR": ["ECB", "EURO", "EUROZONE", "LAGARDE", "GERMANY", "EUROPE"],
+                            "GBP": ["BOE", "BANK OF ENGLAND", "POUND", "STERLING", "UK ", "BAILEY"],
+                            "JPY": ["BOJ", "BANK OF JAPAN", "YEN", "JAPAN", "UEDA"],
+                            "CHF": ["SNB", "SWISS", "FRANC"],
+                            "CAD": ["BOC", "CANADA", "LOONIE", "MACKLEM"],
+                            "AUD": ["RBA", "AUSTRALIA", "AUSSIE"],
+                            "NZD": ["RBNZ", "NEW ZEALAND", "KIWI"]
+                        }
+                        if any(kw in headline_upper for kw in currency_keywords.get(curr, [])):
+                            if headline not in headlines_by_currency[curr]:
+                                headlines_by_currency[curr].append(headline)
+                
+                total = sum(len(v) for v in headlines_by_currency.values())
+                print(f"[Oracle] 📰 Mapped {total} headlines to currencies")
+    except Exception as e:
+        print(f"[Oracle] ⚠️ Could not fetch news from Pulse: {e}")
+    
+    return headlines_by_currency
+
+
+async def analyze_cb_tone_from_news(currency: str, headlines: List[str]) -> dict:
+    """Use Claude to analyze central bank tone from recent headlines."""
+    if not headlines:
+        return {"cb_tone": "neutral", "confidence": 30}
+    
+    cb_names = {
+        "USD": "Federal Reserve (Fed)",
+        "EUR": "European Central Bank (ECB)",
+        "GBP": "Bank of England (BoE)",
+        "JPY": "Bank of Japan (BoJ)",
+        "CHF": "Swiss National Bank (SNB)",
+        "CAD": "Bank of Canada (BoC)",
+        "AUD": "Reserve Bank of Australia (RBA)",
+        "NZD": "Reserve Bank of New Zealand (RBNZ)"
+    }
+    
+    prompt = f"""Analyze these recent headlines about {currency} and the {cb_names.get(currency, 'central bank')}:
+
+{chr(10).join(f'- {h}' for h in headlines[:10])}
+
+Based on these headlines, determine the current central bank tone/stance.
+Respond in this exact JSON format only:
+{{"cb_tone": "hawkish|slightly_hawkish|neutral|slightly_dovish|dovish", "rate_trend": "hiking|peaked|cutting|bottomed", "confidence": 0-100, "key_point": "one sentence summary"}}"""
+    
+    try:
+        response = await call_claude(prompt, "You are a central bank policy analyst. Respond only with valid JSON.", agent_name="Oracle")
+        # Parse JSON from response
+        import re
+        json_match = re.search(r'\{[^}]+\}', response)
+        if json_match:
+            return json.loads(json_match.group())
+    except Exception as e:
+        print(f"[Oracle] ⚠️ CB tone analysis error for {currency}: {e}")
+    
+    return {"cb_tone": "neutral", "confidence": 30}
+
+
+async def generate_dynamic_narrative(currency: str, headlines: List[str], events: List[dict], fred_data: dict) -> str:
+    """Use Claude to generate a dynamic narrative based on current data."""
+    if not headlines and not events:
+        return MACRO_DATA.get(currency, {}).get("key_narrative", "No recent data")
+    
+    # Build context
+    context_parts = []
+    
+    if headlines:
+        context_parts.append(f"Recent headlines:\n" + "\n".join(f"- {h}" for h in headlines[:8]))
+    
+    if events:
+        context_parts.append(f"Upcoming events:\n" + "\n".join(f"- {e['event']} in {e['days']} days ({e['impact']} impact)" for e in events[:5]))
+    
+    if fred_data:
+        context_parts.append(f"Current data: Rate={fred_data.get('rate', 'N/A')}%, Unemployment={fred_data.get('unemployment', 'N/A')}%")
+    
+    prompt = f"""Based on this information about {currency}:
+
+{chr(10).join(context_parts)}
+
+Write a brief key narrative (max 10 words) summarizing the current macro situation for {currency}.
+Examples: "Fed patient, soft landing narrative intact" or "ECB pivoting dovish on growth concerns"
+Respond with just the narrative text, nothing else."""
+    
+    try:
+        response = await call_claude(prompt, "You are a macro analyst. Be concise.", agent_name="Oracle")
+        # Clean up response
+        narrative = response.strip().strip('"').strip("'")
+        if len(narrative) > 60:
+            narrative = narrative[:57] + "..."
+        return narrative
+    except Exception as e:
+        print(f"[Oracle] ⚠️ Narrative generation error for {currency}: {e}")
+    
+    return MACRO_DATA.get(currency, {}).get("key_narrative", "Analysis pending")
+
+
+async def update_dynamic_data():
+    """Fetch and update all dynamic data (events, narratives, cb_tone)."""
+    global dynamic_narratives, narrative_cache_time, MACRO_DATA
+    
+    # Check cache
+    if narrative_cache_time and (datetime.utcnow() - narrative_cache_time).total_seconds() < NARRATIVE_CACHE_HOURS * 3600:
+        return
+    
+    print("[Oracle] 🔄 Updating dynamic narratives and events...")
+    
+    # Fetch data in parallel
+    events_task = fetch_upcoming_events_from_sentinel()
+    headlines_task = fetch_news_headlines()
+    
+    events_by_currency, headlines_by_currency = await asyncio.gather(events_task, headlines_task)
+    
+    # Update each currency
+    for currency in CURRENCIES:
+        headlines = headlines_by_currency.get(currency, [])
+        events = events_by_currency.get(currency, [])
+        fred_data = fred_data_cache.get(currency, {})
+        
+        # Analyze CB tone if we have headlines
+        if headlines:
+            tone_analysis = await analyze_cb_tone_from_news(currency, headlines)
+            if tone_analysis.get("confidence", 0) > 50:
+                MACRO_DATA[currency]["cb_tone"] = tone_analysis.get("cb_tone", MACRO_DATA[currency].get("cb_tone", "neutral"))
+                if tone_analysis.get("rate_trend"):
+                    MACRO_DATA[currency]["rate_trend"] = tone_analysis.get("rate_trend")
+        
+        # Generate narrative
+        if headlines or events:
+            narrative = await generate_dynamic_narrative(currency, headlines, events, fred_data)
+            MACRO_DATA[currency]["key_narrative"] = narrative
+        
+        # Update upcoming events
+        if events:
+            MACRO_DATA[currency]["upcoming_events"] = events[:5]  # Top 5 events
+    
+    narrative_cache_time = datetime.utcnow()
+    print("[Oracle] ✅ Dynamic data updated for all currencies")
+
+
+# ═══════════════════════════════════════════════════════════════
 # BASE MACRO DATA (Updated with real data on startup)
 # ═══════════════════════════════════════════════════════════════
 
@@ -619,6 +835,9 @@ def build_currency_profiles():
         profile = calculate_currency_score(data)
         profile["currency"] = currency
         profile["raw_data"] = data
+        # Include upcoming events if available
+        if "upcoming_events" in data:
+            profile["upcoming_events"] = data["upcoming_events"]
         currency_profiles[currency] = profile
 
 
@@ -673,6 +892,23 @@ async def background_analysis():
         await asyncio.sleep(300)  # Update every 5 minutes (macro is slower)
 
 
+async def background_dynamic_update():
+    """Background loop to update dynamic narratives and events."""
+    # Wait a bit for other agents to start
+    await asyncio.sleep(30)
+    
+    while True:
+        try:
+            await update_dynamic_data()
+            # Rebuild profiles with new data
+            build_currency_profiles()
+            build_pair_analyses()
+        except Exception as e:
+            print(f"[Oracle] ⚠️ Dynamic update error: {e}")
+        
+        await asyncio.sleep(NARRATIVE_CACHE_HOURS * 3600)  # Update every hour
+
+
 # Using shared call_claude - removed duplicate implementation
 
 
@@ -694,7 +930,10 @@ async def startup():
     
     build_currency_profiles()
     build_pair_analyses()
+    
+    # Start background tasks
     asyncio.create_task(background_analysis())
+    asyncio.create_task(background_dynamic_update())
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -949,6 +1188,29 @@ async def get_pair(pair: str):
     return pair_analysis.get(pair.upper(), {"error": "Not found"})
 
 
+@app.get("/api/events")
+async def get_events():
+    """Get upcoming economic events for all currencies."""
+    events = {}
+    for currency, data in MACRO_DATA.items():
+        events[currency] = data.get("upcoming_events", [])
+    return {
+        "events": events,
+        "last_updated": narrative_cache_time.isoformat() if narrative_cache_time else None
+    }
+
+
+@app.post("/api/refresh-narratives")
+async def refresh_narratives():
+    """Manually trigger a refresh of dynamic narratives and events."""
+    global narrative_cache_time
+    narrative_cache_time = None  # Force refresh
+    await update_dynamic_data()
+    build_currency_profiles()
+    build_pair_analyses()
+    return {"status": "refreshed", "timestamp": datetime.utcnow().isoformat()}
+
+
 @app.get("/api/status")
 async def get_status():
     return {
@@ -957,7 +1219,8 @@ async def get_status():
         "status": "active",
         "currencies_tracked": len(currency_profiles),
         "pairs_analyzed": len(pair_analysis),
-        "version": "2.0",
+        "narrative_last_updated": narrative_cache_time.isoformat() if narrative_cache_time else "never",
+        "version": "2.1",
     }
 
 
