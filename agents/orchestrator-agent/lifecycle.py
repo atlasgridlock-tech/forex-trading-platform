@@ -540,8 +540,20 @@ class LifecycleManager:
             setups = result["setups"]
             # Get the best qualified setup (first one, already sorted by score)
             for setup_data in setups:
-                # Skip if score too low
-                if setup_data.get("score", 0) < 70:
+                tactician_score = setup_data.get("score", 0)
+                qualified = setup_data.get("qualified", False)
+                
+                # Log ALL setups for debugging
+                print(f"   [{symbol}] Strategy: {setup_data.get('name', 'Unknown')}, Score: {tactician_score}, Qualified: {qualified}, Direction: {setup_data.get('direction', '?')}")
+                
+                # Allow setups with score >= 55 if qualified (lowered from 70)
+                # The real decision is made by confluence score later
+                if tactician_score < 55:
+                    print(f"   [{symbol}] ❌ Score {tactician_score} below minimum (55)")
+                    continue
+                
+                if not qualified:
+                    print(f"   [{symbol}] ❌ Strategy not qualified: {setup_data.get('rejection_reason', 'Unknown')}")
                     continue
                 
                 # Map Tactician response to TradeSetup
@@ -741,15 +753,22 @@ class LifecycleManager:
             reasons.append(f"Confluence too low ({confluence_score}/100)")
         
         # Make decision based on CONFLUENCE SCORE
+        print(f"   [{setup.symbol}] 📊 Confluence: {confluence_score}/100, Tactician: {setup.confidence}/100")
+        
         if not reasons:
             if confluence_score >= 75:
                 decision = "BUY" if setup.direction == "long" else "SELL"
+                print(f"   [{setup.symbol}] ✅ APPROVED: {decision}")
             elif confluence_score >= 60:
                 decision = "WATCHLIST"
                 reasons.append(f"Watchlist range ({confluence_score}/100)")
+                print(f"   [{setup.symbol}] 👀 WATCHLIST: {confluence_score}/100")
             else:
                 decision = "NO_TRADE"
                 reasons.append(f"Below threshold ({confluence_score}/100)")
+                print(f"   [{setup.symbol}] ❌ NO_TRADE: {confluence_score}/100")
+        else:
+            print(f"   [{setup.symbol}] ❌ BLOCKED: {', '.join(reasons)}")
         
         result = {
             "decision": decision,
