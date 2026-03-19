@@ -200,8 +200,7 @@ narrative_cache_time: datetime = None
 NARRATIVE_CACHE_HOURS = 1  # Refresh narratives every hour
 
 # Agent URLs
-SENTINEL_URL = get_agent_url("news")  # News agent has economic calendar
-PULSE_URL = get_agent_url("sentiment")  # Sentiment agent has news headlines
+SENTINEL_URL = get_agent_url("news")  # News agent has economic calendar AND headlines
 
 
 async def fetch_upcoming_events_from_sentinel() -> Dict[str, List[dict]]:
@@ -248,42 +247,51 @@ async def fetch_upcoming_events_from_sentinel() -> Dict[str, List[dict]]:
 
 
 async def fetch_news_headlines() -> Dict[str, List[str]]:
-    """Fetch recent news headlines from Pulse (Sentiment Agent)."""
+    """Fetch recent news headlines from Sentinel (News Agent)."""
     headlines_by_currency = {curr: [] for curr in CURRENCIES}
     
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            # Fetch news from Pulse
-            response = await client.get(f"{PULSE_URL}/api/news")
+            # Fetch headlines from Sentinel
+            response = await client.get(f"{SENTINEL_URL}/api/headlines")
             if response.status_code == 200:
                 news_data = response.json()
                 
-                # Process headlines
-                for item in news_data.get("headlines", news_data.get("news", [])):
-                    headline = item.get("title") or item.get("headline", "")
+                # Process headlines - they may be in different formats
+                headlines_list = news_data if isinstance(news_data, list) else news_data.get("headlines", [])
+                
+                for item in headlines_list:
+                    # Handle both string headlines and dict objects
+                    if isinstance(item, str):
+                        headline = item
+                    else:
+                        headline = item.get("title") or item.get("headline", "")
+                    
+                    if not headline:
+                        continue
                     
                     # Map to currencies mentioned
                     headline_upper = headline.upper()
                     for curr in CURRENCIES:
                         # Check for currency mentions
                         currency_keywords = {
-                            "USD": ["FED", "FEDERAL RESERVE", "DOLLAR", "US ", "U.S.", "POWELL"],
-                            "EUR": ["ECB", "EURO", "EUROZONE", "LAGARDE", "GERMANY", "EUROPE"],
-                            "GBP": ["BOE", "BANK OF ENGLAND", "POUND", "STERLING", "UK ", "BAILEY"],
-                            "JPY": ["BOJ", "BANK OF JAPAN", "YEN", "JAPAN", "UEDA"],
-                            "CHF": ["SNB", "SWISS", "FRANC"],
-                            "CAD": ["BOC", "CANADA", "LOONIE", "MACKLEM"],
-                            "AUD": ["RBA", "AUSTRALIA", "AUSSIE"],
-                            "NZD": ["RBNZ", "NEW ZEALAND", "KIWI"]
+                            "USD": ["FED", "FEDERAL RESERVE", "DOLLAR", "US ", "U.S.", "POWELL", "FOMC"],
+                            "EUR": ["ECB", "EURO", "EUROZONE", "LAGARDE", "GERMANY", "EUROPE", "FRANCE"],
+                            "GBP": ["BOE", "BANK OF ENGLAND", "POUND", "STERLING", "UK ", "BAILEY", "BRITAIN"],
+                            "JPY": ["BOJ", "BANK OF JAPAN", "YEN", "JAPAN", "UEDA", "TOKYO"],
+                            "CHF": ["SNB", "SWISS", "FRANC", "SWITZERLAND"],
+                            "CAD": ["BOC", "CANADA", "LOONIE", "MACKLEM", "OTTAWA"],
+                            "AUD": ["RBA", "AUSTRALIA", "AUSSIE", "SYDNEY"],
+                            "NZD": ["RBNZ", "NEW ZEALAND", "KIWI", "WELLINGTON"]
                         }
                         if any(kw in headline_upper for kw in currency_keywords.get(curr, [])):
                             if headline not in headlines_by_currency[curr]:
                                 headlines_by_currency[curr].append(headline)
                 
                 total = sum(len(v) for v in headlines_by_currency.values())
-                print(f"[Oracle] 📰 Mapped {total} headlines to currencies")
+                print(f"[Oracle] 📰 Mapped {total} headlines to currencies from Sentinel")
     except Exception as e:
-        print(f"[Oracle] ⚠️ Could not fetch news from Pulse: {e}")
+        print(f"[Oracle] ⚠️ Could not fetch headlines from Sentinel: {e}")
     
     return headlines_by_currency
 
