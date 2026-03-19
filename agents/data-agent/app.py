@@ -828,8 +828,13 @@ async def update_market_data(data: TickData):
         }
         
         # Update spread history
-        spread = tick.get("spread", 0)
-        spread_history[clean_symbol].append(spread)
+        # MT5 sends spread in POINTS, convert to PIPS
+        # For most pairs: 1 pip = 10 points (5-digit pairs like EURUSD at 1.23456)
+        # For JPY pairs: 1 pip = 1 point (3-digit pairs like USDJPY at 123.456)
+        spread_points = tick.get("spread", 0)
+        is_jpy_pair = "JPY" in clean_symbol
+        spread_pips = spread_points if is_jpy_pair else spread_points / 10.0
+        spread_history[clean_symbol].append(spread_pips)
         if len(spread_history[clean_symbol]) > 100:
             spread_history[clean_symbol] = spread_history[clean_symbol][-100:]
         
