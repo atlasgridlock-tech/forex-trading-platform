@@ -56,7 +56,7 @@ STRATEGY_TEMPLATES = {
         "allowed_regimes": ["trending", "high_vol_expansion"],
         "invalid_regimes": ["range_bound", "mean_reverting", "unstable_noisy", "event_driven"],
         "required_confluence": ["trend_grade_b_plus", "structure_confirms", "macro_aligns", "no_news_2h"],
-        "max_spread_pips": 2.0,
+        "max_spread_pips": 3.0,  # Relaxed from 2.0 - realistic for majors
         "min_atr_pct": 30,
         "min_structure_quality": 60,
         "macro_compatibility": "must_align",
@@ -69,7 +69,7 @@ STRATEGY_TEMPLATES = {
         "allowed_regimes": ["trending"],
         "invalid_regimes": ["range_bound", "breakout_ready", "unstable_noisy", "event_driven"],
         "required_confluence": ["trend_grade_a_b", "price_at_structure", "rsi_pullback_zone"],
-        "max_spread_pips": 1.5,
+        "max_spread_pips": 2.5,  # Relaxed from 1.5
         "min_atr_pct": 40,
         "min_structure_quality": 70,
         "macro_compatibility": "must_align",
@@ -82,7 +82,7 @@ STRATEGY_TEMPLATES = {
         "allowed_regimes": ["breakout_ready", "range_bound"],
         "invalid_regimes": ["trending", "mean_reverting", "unstable_noisy"],
         "required_confluence": ["consolidation_pattern", "bollinger_squeeze", "volume_expansion"],
-        "max_spread_pips": 3.0,
+        "max_spread_pips": 4.0,  # Relaxed from 3.0
         "min_atr_pct": 25,
         "min_structure_quality": 75,
         "macro_compatibility": "prefer_align",
@@ -95,7 +95,7 @@ STRATEGY_TEMPLATES = {
         "allowed_regimes": ["range_bound", "mean_reverting"],
         "invalid_regimes": ["trending", "breakout_ready", "high_vol_expansion", "unstable_noisy"],
         "required_confluence": ["clear_range", "price_at_extreme", "rsi_divergence"],
-        "max_spread_pips": 1.5,
+        "max_spread_pips": 2.5,  # Relaxed from 1.5
         "min_atr_pct": 20,
         "min_structure_quality": 80,
         "macro_compatibility": "any",
@@ -108,7 +108,7 @@ STRATEGY_TEMPLATES = {
         "allowed_regimes": ["range_bound", "mean_reverting", "breakout_ready"],
         "invalid_regimes": ["trending", "high_vol_expansion"],
         "required_confluence": ["breakout_attempt", "quick_rejection", "trapped_traders"],
-        "max_spread_pips": 2.0,
+        "max_spread_pips": 3.0,  # Relaxed from 2.0
         "min_atr_pct": 30,
         "min_structure_quality": 70,
         "macro_compatibility": "prefer_oppose",
@@ -121,7 +121,7 @@ STRATEGY_TEMPLATES = {
         "allowed_regimes": ["high_vol_expansion", "breakout_ready"],
         "invalid_regimes": ["low_vol_drift", "unstable_noisy"],
         "required_confluence": ["atr_expanding", "clear_direction", "structure_break"],
-        "max_spread_pips": 4.0,
+        "max_spread_pips": 5.0,  # Relaxed from 4.0
         "min_atr_pct": 150,
         "min_structure_quality": 50,
         "macro_compatibility": "any",
@@ -131,10 +131,10 @@ STRATEGY_TEMPLATES = {
     "SESSION_OPEN_DRIVE": {
         "name": "Session Open Drive",
         "description": "Trade London or NY session opening momentum",
-        "allowed_regimes": ["trending", "breakout_ready"],
+        "allowed_regimes": ["trending", "breakout_ready", "high_vol_expansion"],  # Added high_vol_expansion
         "invalid_regimes": ["unstable_noisy", "event_driven"],
         "required_confluence": ["session_window", "prior_session_range", "direction_aligns_htf"],
-        "max_spread_pips": 2.0,
+        "max_spread_pips": 3.0,  # Relaxed from 2.0
         "min_atr_pct": 40,
         "min_structure_quality": 60,
         "macro_compatibility": "prefer_align",
@@ -148,7 +148,7 @@ STRATEGY_TEMPLATES = {
         "allowed_regimes": ["event_driven"],
         "invalid_regimes": ["all_other"],
         "required_confluence": ["high_impact_event", "pre_event_range", "risk_accepted"],
-        "max_spread_pips": 5.0,
+        "max_spread_pips": 6.0,  # Relaxed from 5.0
         "min_atr_pct": 50,
         "min_structure_quality": 50,
         "macro_compatibility": "event_overrides",
