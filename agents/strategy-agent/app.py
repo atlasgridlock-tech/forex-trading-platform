@@ -186,7 +186,7 @@ def check_spread(strategy: dict, spread: float, is_cross_pair: bool = False, is_
         max_spread = base_max_spread * 4.0  # 4x for exotics
         pair_type = "exotic"
     elif is_cross_pair:
-        max_spread = base_max_spread * 2.5  # 2.5x for crosses (e.g., 1.5 → 3.75 for GBPJPY)
+        max_spread = base_max_spread * 3.0  # 3x for crosses (e.g., 3.0 → 9.0 for GBPJPY/EURAUD)
         pair_type = "cross"
     else:
         max_spread = base_max_spread
@@ -854,11 +854,14 @@ async def evaluate_strategies(symbol: str) -> dict:
         qualified = critical_passed and final_score >= 60
         
         # DEBUG: Log critical check details for high-score strategies
-        if final_score >= 75 and not qualified:
-            print(f"      [{symbol}] ⚠️ High score ({final_score}) but NOT qualified!")
-            for c in critical_checks:
-                status = "✓" if c["passed"] else "✗"
-                print(f"         {status} {c['check']}: {c['message']}")
+        if final_score >= 75:
+            if qualified:
+                print(f"      [{symbol}] ✅ QUALIFIED: {template['name']}, Score: {final_score}, Direction: {direction}")
+            else:
+                print(f"      [{symbol}] ⚠️ High score ({final_score}) but NOT qualified!")
+                for c in critical_checks:
+                    status = "✓" if c["passed"] else "✗"
+                    print(f"         {status} {c['check']}: {c['message']}")
         
         # Get rejection reason if not qualified - be more specific
         rejection_reason = None
