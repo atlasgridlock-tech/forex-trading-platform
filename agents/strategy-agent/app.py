@@ -848,17 +848,32 @@ async def evaluate_strategies(symbol: str) -> dict:
         final_score = int(score / max_score * 100) if max_score > 0 else 0
         
         # Check if qualified (all critical checks passed)
-        critical_checks = [c for c in checks if c["check"] in ["regime", "spread"]]
+        # Critical checks: direction, regime, spread
+        critical_checks = [c for c in checks if c["check"] in ["direction", "regime", "spread"]]
         critical_passed = all(c["passed"] for c in critical_checks)
         qualified = critical_passed and final_score >= 60
+        
+        # DEBUG: Log critical check details for high-score strategies
+        if final_score >= 75 and not qualified:
+            print(f"      [{symbol}] ⚠️ High score ({final_score}) but NOT qualified!")
+            for c in critical_checks:
+                status = "✓" if c["passed"] else "✗"
+                print(f"         {status} {c['check']}: {c['message']}")
         
         # Get rejection reason if not qualified - be more specific
         rejection_reason = None
         if not qualified:
+            # DEBUG: Show all check results
+            regime_check = next((c for c in checks if c["check"] == "regime"), None)
+            spread_check = next((c for c in checks if c["check"] == "spread"), None)
+            direction_check = next((c for c in checks if c["check"] == "direction"), None)
+            
             # First check critical failures (regime/spread)
             critical_failures = [c for c in critical_checks if not c["passed"]]
             if critical_failures:
                 rejection_reason = critical_failures[0]["message"]
+            elif direction_check and not direction_check["passed"]:
+                rejection_reason = direction_check["message"]
             else:
                 # Then check other failures
                 failed = [c for c in checks if not c["passed"]]
@@ -866,6 +881,9 @@ async def evaluate_strategies(symbol: str) -> dict:
                     rejection_reason = failed[0]["message"]
                 elif final_score < 60:
                     rejection_reason = f"Score {final_score} < 60"
+                else:
+                    # This shouldn't happen - debug output
+                    rejection_reason = f"UNKNOWN: regime={regime_check}, spread={spread_check}, dir={direction_check}"
         
         evaluated.append({
             "strategy_id": strat_id,
