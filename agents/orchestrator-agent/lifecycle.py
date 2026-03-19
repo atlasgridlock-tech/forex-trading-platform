@@ -1234,15 +1234,19 @@ class LifecycleManager:
             
             if setup:
                 cycle_result["setups_generated"] += 1
+                print(f"   [{symbol}] 🎯 Setup generated: {setup.template}, Direction: {setup.direction}")
                 
                 # Stage 5: Risk screening
                 risk_ok, risk_result = await self.stage_risk_screening(setup)
+                print(f"   [{symbol}] Guardian: {'✓' if risk_ok else '✗'} {risk_result.get('reason', 'OK')}")
                 
                 # Stage 6: Portfolio screening
                 portfolio_ok, portfolio_result = await self.stage_portfolio_screening(setup)
+                print(f"   [{symbol}] Balancer: {'✓' if portfolio_ok else '✗'}")
                 
                 # Stage 7: Execution screening
                 exec_ok, exec_result = await self.stage_execution_screening(setup)
+                print(f"   [{symbol}] Executor: {'✓' if exec_ok else '✗'} {exec_result.get('block_reason', 'OK')}")
                 
                 # Stage 8: Trade decision (pass analysis for CONFLUENCE scoring)
                 decision, decision_result = await self.stage_trade_decision(
