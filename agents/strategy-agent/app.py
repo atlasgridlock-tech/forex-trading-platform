@@ -662,6 +662,10 @@ async def evaluate_strategies(symbol: str) -> dict:
     # Extract key values with robust null handling
     # (handles cases where key exists but value is None)
     regime = regime_data.get("primary_regime", "unknown") if regime_data else "unknown"
+    
+    # DEBUG: Log regime detection
+    print(f"   [{symbol}] 🧭 Regime detected: '{regime}'")
+    
     trend_grade = technical_data.get("trend_grade", "D") if technical_data else "D"
     structure_quality = structure_data.get("confidence", 50) if structure_data else 50
     macro_bias = macro_data.get("pair_bias", "neutral") if macro_data else "neutral"
@@ -844,15 +848,24 @@ async def evaluate_strategies(symbol: str) -> dict:
         final_score = int(score / max_score * 100) if max_score > 0 else 0
         
         # Check if qualified (all critical checks passed)
-        critical_passed = all(c["passed"] for c in checks if c["check"] in ["regime", "spread"])
+        critical_checks = [c for c in checks if c["check"] in ["regime", "spread"]]
+        critical_passed = all(c["passed"] for c in critical_checks)
         qualified = critical_passed and final_score >= 60
         
-        # Get rejection reason if not qualified
+        # Get rejection reason if not qualified - be more specific
         rejection_reason = None
         if not qualified:
-            failed = [c for c in checks if not c["passed"]]
-            if failed:
-                rejection_reason = failed[0]["message"]
+            # First check critical failures (regime/spread)
+            critical_failures = [c for c in critical_checks if not c["passed"]]
+            if critical_failures:
+                rejection_reason = critical_failures[0]["message"]
+            else:
+                # Then check other failures
+                failed = [c for c in checks if not c["passed"]]
+                if failed:
+                    rejection_reason = failed[0]["message"]
+                elif final_score < 60:
+                    rejection_reason = f"Score {final_score} < 60"
         
         evaluated.append({
             "strategy_id": strat_id,
