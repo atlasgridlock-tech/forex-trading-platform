@@ -125,8 +125,74 @@ async def fetch_fred_series(series_id: str) -> Optional[float]:
     return None
 
 
+async def fetch_fred_series_with_history(series_id: str, periods: int = 12) -> Optional[List[float]]:
+    """Fetch FRED series with historical values for trend calculation."""
+    if not FRED_API_KEY:
+        return None
+    
+    try:
+        from shared import get_pooled_client
+        client = await get_pooled_client()
+        
+        response = await client.get(
+            "https://api.stlouisfed.org/fred/series/observations",
+            params={
+                "series_id": series_id,
+                "api_key": FRED_API_KEY,
+                "file_type": "json",
+                "sort_order": "desc",
+                "limit": periods
+            },
+            timeout=10.0
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            observations = data.get("observations", [])
+            values = []
+            for obs in observations:
+                value = obs.get("value", ".")
+                if value != ".":
+                    values.append(float(value))
+            return values if values else None
+    except Exception as e:
+        print(f"[Oracle] Error fetching FRED history {series_id}: {e}")
+    
+    return None
+
+
+def calculate_trend_from_values(values: List[float], threshold_pct: float = 5.0) -> str:
+    """Calculate trend from a list of values (newest first).
+    
+    Args:
+        values: List of values, newest first
+        threshold_pct: Percentage change threshold to determine trend
+    
+    Returns: 'rising', 'declining', 'stable'
+    """
+    if not values or len(values) < 2:
+        return "stable"
+    
+    current = values[0]
+    # Compare to 3-period ago or oldest available
+    old_idx = min(3, len(values) - 1)
+    old_value = values[old_idx]
+    
+    if old_value == 0:
+        return "stable"
+    
+    change_pct = ((current - old_value) / abs(old_value)) * 100
+    
+    if change_pct > threshold_pct:
+        return "rising"
+    elif change_pct < -threshold_pct:
+        return "declining"
+    else:
+        return "stable"
+
+
 async def fetch_all_fred_data() -> Dict[str, dict]:
-    """Fetch all economic indicators from FRED."""
+    """Fetch all economic indicators from FRED with historical data for trends."""
     global fred_data_cache, fred_cache_time
     
     # Check cache
@@ -134,17 +200,19 @@ async def fetch_all_fred_data() -> Dict[str, dict]:
         if fred_data_cache:
             return fred_data_cache
     
-    print("[Oracle] 📊 Fetching real macro data from FRED...")
+    print("[Oracle] 📊 Fetching real macro data from FRED (with history for trends)...")
     
     result = {}
     
     for currency, series_map in FRED_SERIES.items():
         result[currency] = {}
         for indicator, series_id in series_map.items():
-            value = await fetch_fred_series(series_id)
-            if value is not None:
-                result[currency][indicator] = value
-                print(f"[Oracle] ✅ {currency} {indicator}: {value}")
+            # Fetch with history for trend calculation
+            values = await fetch_fred_series_with_history(series_id, periods=6)
+            if values:
+                result[currency][indicator] = values[0]  # Current value
+                result[currency][f"{indicator}_history"] = values  # Keep history for trend calc
+                print(f"[Oracle] ✅ {currency} {indicator}: {values[0]}")
     
     if result:
         fred_data_cache = result
@@ -168,24 +236,90 @@ def get_rate_trend(current: float, currency: str) -> str:
 
 
 def update_macro_data_from_fred(fred_data: Dict[str, dict]):
-    """Update MACRO_DATA with real FRED values."""
+    """Update MACRO_DATA with real FRED values AND calculated trends."""
     global MACRO_DATA
     
     for currency, indicators in fred_data.items():
         if currency in MACRO_DATA:
+            # Update rate and calculate rate trend from history
             if "rate" in indicators:
                 MACRO_DATA[currency]["rate"] = round(indicators["rate"], 2)
-                MACRO_DATA[currency]["rate_trend"] = get_rate_trend(indicators["rate"], currency)
+                # Calculate rate trend from history if available
+                if "rate_history" in indicators:
+                    trend = calculate_trend_from_values(indicators["rate_history"], threshold_pct=2.0)
+                    if trend == "rising":
+                        MACRO_DATA[currency]["rate_trend"] = "hiking"
+                    elif trend == "declining":
+                        MACRO_DATA[currency]["rate_trend"] = "cutting"
+                    else:
+                        MACRO_DATA[currency]["rate_trend"] = "peaked"
+                    print(f"[Oracle] 📈 {currency} rate trend: {MACRO_DATA[currency]['rate_trend']} (from FRED history)")
+                else:
+                    MACRO_DATA[currency]["rate_trend"] = get_rate_trend(indicators["rate"], currency)
+            
+            # Update CPI and calculate inflation trend
             if "cpi" in indicators:
-                # FRED CPI is index, need to calculate YoY change
-                # For now, use a reasonable approximation
-                MACRO_DATA[currency]["cpi"] = round(indicators["cpi"] / 100 * 3.5, 1) if indicators["cpi"] > 100 else indicators["cpi"]
+                cpi_value = indicators["cpi"]
+                # FRED CPI is index, convert to approximate YoY %
+                if cpi_value > 100:
+                    MACRO_DATA[currency]["cpi"] = round(cpi_value / 100 * 3.5, 1)
+                else:
+                    MACRO_DATA[currency]["cpi"] = round(cpi_value, 1)
+                
+                # Calculate CPI trend from history
+                if "cpi_history" in indicators:
+                    trend = calculate_trend_from_values(indicators["cpi_history"], threshold_pct=1.0)
+                    if trend == "rising":
+                        MACRO_DATA[currency]["cpi_trend"] = "rising"
+                    elif trend == "declining":
+                        MACRO_DATA[currency]["cpi_trend"] = "declining"
+                    else:
+                        MACRO_DATA[currency]["cpi_trend"] = "stable"
+                    print(f"[Oracle] 📈 {currency} CPI trend: {MACRO_DATA[currency]['cpi_trend']} (from FRED history)")
+            
             if "core_cpi" in indicators:
-                MACRO_DATA[currency]["core_cpi"] = round(indicators["core_cpi"] / 100 * 3.8, 1) if indicators["core_cpi"] > 100 else indicators["core_cpi"]
+                core_cpi_value = indicators["core_cpi"]
+                if core_cpi_value > 100:
+                    MACRO_DATA[currency]["core_cpi"] = round(core_cpi_value / 100 * 3.8, 1)
+                else:
+                    MACRO_DATA[currency]["core_cpi"] = round(core_cpi_value, 1)
+            
+            # Update unemployment and calculate employment trend
             if "unemployment" in indicators:
                 MACRO_DATA[currency]["unemployment"] = round(indicators["unemployment"], 1)
+                
+                # Calculate employment trend from unemployment history
+                if "unemployment_history" in indicators:
+                    trend = calculate_trend_from_values(indicators["unemployment_history"], threshold_pct=5.0)
+                    # Note: Rising unemployment = weakening employment
+                    if trend == "rising":
+                        MACRO_DATA[currency]["employment_trend"] = "weakening"
+                    elif trend == "declining":
+                        MACRO_DATA[currency]["employment_trend"] = "improving"
+                    else:
+                        MACRO_DATA[currency]["employment_trend"] = "stable"
+                    print(f"[Oracle] 📈 {currency} employment trend: {MACRO_DATA[currency]['employment_trend']} (from FRED history)")
+            
+            # Update GDP and calculate growth trend
             if "gdp" in indicators:
-                MACRO_DATA[currency]["gdp"] = round(indicators["gdp"] / 1000, 1)  # Convert to trillions
+                gdp_value = indicators["gdp"]
+                # Convert to trillions if needed
+                if gdp_value > 1000:
+                    MACRO_DATA[currency]["gdp"] = round(gdp_value / 1000, 1)
+                else:
+                    MACRO_DATA[currency]["gdp"] = round(gdp_value, 1)
+                
+                # Calculate GDP trend from history
+                if "gdp_history" in indicators:
+                    trend = calculate_trend_from_values(indicators["gdp_history"], threshold_pct=1.0)
+                    if trend == "rising":
+                        MACRO_DATA[currency]["gdp_trend"] = "improving"
+                    elif trend == "declining":
+                        MACRO_DATA[currency]["gdp_trend"] = "slowing"
+                    else:
+                        MACRO_DATA[currency]["gdp_trend"] = "stable"
+                    print(f"[Oracle] 📈 {currency} GDP trend: {MACRO_DATA[currency]['gdp_trend']} (from FRED history)")
+            
             if "wage_growth" in indicators:
                 MACRO_DATA[currency]["wage_growth"] = round(indicators["wage_growth"], 1)
 
@@ -416,28 +550,56 @@ Respond ONLY with valid JSON in this exact format:
 
 
 async def generate_dynamic_narrative(currency: str, headlines: List[str], events: List[dict], fred_data: dict) -> str:
-    """Use Claude to generate a dynamic narrative based on current data."""
-    if not headlines and not events:
-        return MACRO_DATA.get(currency, {}).get("key_narrative", "No recent data")
+    """Use Claude to generate a dynamic narrative based on current data.
     
-    # Build context
+    Works even without headlines - uses economic data trends instead.
+    """
+    # Get current macro data for this currency
+    macro = MACRO_DATA.get(currency, {})
+    
+    # Build context from whatever data we have
     context_parts = []
     
+    # Add headlines if available
     if headlines:
         context_parts.append(f"Recent headlines:\n" + "\n".join(f"- {h}" for h in headlines[:8]))
     
+    # Add upcoming events if available
     if events:
         context_parts.append(f"Upcoming events:\n" + "\n".join(f"- {e['event']} in {e['days']} days ({e['impact']} impact)" for e in events[:5]))
     
-    if fred_data:
-        context_parts.append(f"Current data: Rate={fred_data.get('rate', 'N/A')}%, Unemployment={fred_data.get('unemployment', 'N/A')}%")
+    # ALWAYS add economic data context (this is key for when no headlines)
+    econ_context = []
+    if macro.get("rate"):
+        econ_context.append(f"Interest rate: {macro['rate']}% ({macro.get('rate_trend', 'stable')})")
+    if macro.get("cpi"):
+        econ_context.append(f"CPI: {macro['cpi']}% ({macro.get('cpi_trend', 'stable')})")
+    if macro.get("unemployment"):
+        econ_context.append(f"Unemployment: {macro['unemployment']}% ({macro.get('employment_trend', 'stable')})")
+    if macro.get("gdp"):
+        econ_context.append(f"GDP trend: {macro.get('gdp_trend', 'stable')}")
+    if macro.get("cb_tone"):
+        econ_context.append(f"CB stance: {macro['cb_tone']}")
     
-    prompt = f"""Based on this information about {currency}:
+    if econ_context:
+        context_parts.append(f"Economic data:\n" + "\n".join(f"- {e}" for e in econ_context))
+    
+    # If we have no context at all, return a basic narrative
+    if not context_parts:
+        return MACRO_DATA.get(currency, {}).get("key_narrative", "No recent data")
+    
+    cb_names = {
+        "USD": "Fed", "EUR": "ECB", "GBP": "BoE", "JPY": "BoJ",
+        "CHF": "SNB", "CAD": "BoC", "AUD": "RBA", "NZD": "RBNZ"
+    }
+    
+    prompt = f"""Based on this information about {currency} ({cb_names.get(currency, 'central bank')}):
 
 {chr(10).join(context_parts)}
 
-Write a brief key narrative (max 10 words) summarizing the current macro situation for {currency}.
-Examples: "Fed patient, soft landing narrative intact" or "ECB pivoting dovish on growth concerns"
+Write a brief key narrative (max 10 words) summarizing the current macro situation.
+Focus on: rate policy direction, growth outlook, or key risks.
+Examples: "Fed patient, soft landing narrative intact" or "ECB cutting amid growth concerns"
 Respond with just the narrative text, nothing else."""
     
     try:
@@ -475,18 +637,23 @@ async def update_dynamic_data():
         events = events_by_currency.get(currency, [])
         fred_data = fred_data_cache.get(currency, {})
         
-        # Analyze CB tone if we have headlines
+        # Analyze CB tone from headlines OR infer from economic data
         if headlines:
             tone_analysis = await analyze_cb_tone_from_news(currency, headlines)
             if tone_analysis.get("confidence", 0) > 50:
                 MACRO_DATA[currency]["cb_tone"] = tone_analysis.get("cb_tone", MACRO_DATA[currency].get("cb_tone", "neutral"))
                 if tone_analysis.get("rate_trend"):
                     MACRO_DATA[currency]["rate_trend"] = tone_analysis.get("rate_trend")
+        else:
+            # No headlines - infer CB tone from economic data trends
+            inferred_tone = infer_cb_tone_from_data(currency)
+            if inferred_tone:
+                MACRO_DATA[currency]["cb_tone"] = inferred_tone
+                print(f"[Oracle] 🏦 {currency} CB tone inferred from data: {inferred_tone}")
         
-        # Generate narrative
-        if headlines or events:
-            narrative = await generate_dynamic_narrative(currency, headlines, events, fred_data)
-            MACRO_DATA[currency]["key_narrative"] = narrative
+        # Generate narrative - now works even without headlines
+        narrative = await generate_dynamic_narrative(currency, headlines, events, fred_data)
+        MACRO_DATA[currency]["key_narrative"] = narrative
         
         # Update upcoming events
         if events:
@@ -494,6 +661,71 @@ async def update_dynamic_data():
     
     narrative_cache_time = datetime.utcnow()
     print("[Oracle] ✅ Dynamic data updated for all currencies")
+
+
+def infer_cb_tone_from_data(currency: str) -> Optional[str]:
+    """Infer central bank tone from economic data when no headlines available.
+    
+    Logic:
+    - High inflation + strong growth = hawkish
+    - Low inflation + weak growth = dovish
+    - Declining inflation = slightly dovish
+    - Rising unemployment = dovish
+    """
+    macro = MACRO_DATA.get(currency, {})
+    
+    cpi = macro.get("cpi", 2.0)
+    cpi_trend = macro.get("cpi_trend", "stable")
+    gdp_trend = macro.get("gdp_trend", "stable")
+    employment_trend = macro.get("employment_trend", "stable")
+    rate = macro.get("rate", 0)
+    rate_trend = macro.get("rate_trend", "stable")
+    
+    # Score-based approach
+    hawkish_score = 0
+    
+    # Inflation factors
+    if cpi > 3.0:
+        hawkish_score += 2
+    elif cpi > 2.5:
+        hawkish_score += 1
+    elif cpi < 1.5:
+        hawkish_score -= 1
+    
+    if cpi_trend == "rising":
+        hawkish_score += 1
+    elif cpi_trend == "declining":
+        hawkish_score -= 1
+    
+    # Growth factors
+    if gdp_trend == "improving":
+        hawkish_score += 1
+    elif gdp_trend == "slowing":
+        hawkish_score -= 1
+    
+    # Employment factors
+    if employment_trend == "weakening":
+        hawkish_score -= 1
+    elif employment_trend == "improving":
+        hawkish_score += 1
+    
+    # Rate level context
+    if rate > 5.0 and rate_trend in ["peaked", "cutting"]:
+        hawkish_score -= 1  # High rates + cutting = dovish shift
+    elif rate < 1.0 and rate_trend in ["hiking", "bottomed"]:
+        hawkish_score += 1  # Low rates + hiking = hawkish shift
+    
+    # Map score to tone
+    if hawkish_score >= 3:
+        return "hawkish"
+    elif hawkish_score >= 1:
+        return "slightly_hawkish"
+    elif hawkish_score <= -3:
+        return "dovish"
+    elif hawkish_score <= -1:
+        return "slightly_dovish"
+    else:
+        return "neutral"
 
 
 # ═══════════════════════════════════════════════════════════════
