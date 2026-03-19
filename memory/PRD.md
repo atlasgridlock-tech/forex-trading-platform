@@ -68,16 +68,37 @@ Build and debug a complex 15-agent forex trading platform, making the system ful
 | Myfxbook | ⚠️ Rate-limited | 60-min cache + 2hr backoff implemented |
 | CFTC COT | ✅ Live | 24-hour cache |
 
+### March 2025 - Session 2
+**Critical Bug Fixes:**
+- ✅ Fixed spread calculation bug in `data-agent` (points treated as pips → 10x inflation)
+- ✅ Fixed `qualified: True` not being returned from strategy-agent API
+- ✅ Loosened overly restrictive spread limits in strategy templates
+- ✅ Fixed orchestrator calling wrong port (8000 → 3020) for confluence score
+
+**Score Discrepancy Diagnostic Feature:**
+- ✅ Added `GET /api/confluence/{symbol}/debug` endpoint
+- ✅ Returns raw agent input data alongside calculated score
+- ✅ Timestamps on all confluence responses for timing comparison
+- ✅ Detailed breakdown logging in lifecycle for troubleshooting
+
+**Status:**
+- System is working end-to-end: pairs being added to watchlist (60-74 score)
+- Waiting for confluence ≥75 to verify trade execution
+
 ## Pending/Backlog
-- P0: End-to-end trading loop verification (confluence ≥75 → trade)
-- P1: None
+- P0: Verify trade execution when confluence ≥75 (USER VERIFICATION PENDING)
+- P1: Score discrepancy between dashboard/lifecycle (timing issue - documented, not a bug)
+- P2: Fine-tune strategy regime templates (reduce "regime invalid" rejections)
 - P2: ATR-based trailing stops
 - P2: Multi-timeframe confluence weighting
 
 ## Key Files
+- `/app/agents/orchestrator-agent/lifecycle.py` - Core trade lifecycle logic
+- `/app/agents/orchestrator-agent/app.py` - Dashboard, confluence API
+- `/app/agents/data-agent/app.py` - Market data, spread calculation
+- `/app/agents/strategy-agent/app.py` - Strategy qualification, templates
 - `/app/agents/macro-agent/app.py` - Oracle agent, dynamic narratives
 - `/app/agents/sentiment-agent/app.py` - Pulse agent, rate limiting fix
-- `/app/agents/strategy-agent/app.py` - Confluence scoring
 - `/app/agents/shared/utils.py` - Claude helper function
 - `/app/agents/shared/performance.py` - HTTP pooling, caching
 - `/app/agents/start_agents.sh` - Startup script

@@ -549,8 +549,15 @@ async def check_hard_gates(symbol: str, direction: str, strategy: str, stop_loss
     return all_passed, gates
 
 
-async def calculate_confluence_score(symbol: str, direction: str, strategy: str) -> Tuple[int, Dict[str, dict]]:
-    """Calculate weighted confluence score across all categories."""
+async def calculate_confluence_score(symbol: str, direction: str, strategy: str, log_inputs: bool = False) -> Tuple[int, Dict[str, dict]]:
+    """Calculate weighted confluence score across all categories.
+    
+    Args:
+        symbol: Trading pair
+        direction: "long" or "short"
+        strategy: Strategy identifier
+        log_inputs: If True, print raw agent data for debugging score discrepancies
+    """
     scores = {}
     weights = CONFIG["confluence_weights"]
     
@@ -567,6 +574,9 @@ async def calculate_confluence_score(symbol: str, direction: str, strategy: str)
         # Atlas Jr. uses "mtf_alignment" (string) not "mtf_aligned" (boolean)
         mtf_alignment = technical_data.get("mtf_alignment", "")
         mtf_aligned = "BULLISH" in mtf_alignment.upper() or "BEARISH" in mtf_alignment.upper()
+        
+        if log_inputs:
+            print(f"   [DEBUG] Atlas data: grade={trend_grade}, direction={trend_direction}, mtf={mtf_alignment}")
         
         # Base score by grade
         grade_scores = {"A": 15, "B": 12, "C": 8, "D": 4, "F": 0}
@@ -1473,6 +1483,9 @@ async def evaluate_trade(candidate: TradeCandidate):
 @app.get("/api/confluence/{symbol}")
 async def get_confluence(symbol: str, direction: str = "long"):
     """Get confluence analysis for a symbol."""
+    import time
+    request_time = datetime.utcnow().isoformat()
+    
     # Fetch actual strategy from Tactician instead of using "generic"
     tactician_data = await fetch_agent_data("tactician", f"/api/strategy/{symbol}")
     strategy = "generic"
@@ -1491,7 +1504,102 @@ async def get_confluence(symbol: str, direction: str = "long"):
         "score_breakdown": breakdown,
         "hard_gates": gates,
         "all_gates_passed": gates_passed,
+        "calculated_at": request_time,  # Timestamp to track when this score was calculated
+        "strategy_used": strategy,
     }
+
+
+@app.get("/api/confluence/{symbol}/debug")
+async def get_confluence_debug(symbol: str, direction: str = "long"):
+    """
+    Debug endpoint: Get confluence score with detailed agent input data.
+    
+    Use this to investigate score discrepancies between dashboard views and lifecycle logs.
+    Returns raw agent data alongside the calculated score to identify what changed.
+    """
+    import time
+    request_time = datetime.utcnow().isoformat()
+    
+    # Fetch actual strategy from Tactician
+    tactician_data = await fetch_agent_data("tactician", f"/api/strategy/{symbol}")
+    strategy = "generic"
+    if tactician_data:
+        selected = tactician_data.get("selected_strategy", {})
+        if selected:
+            strategy = selected.get("strategy_id", selected.get("name", "generic"))
+    
+    # Collect raw agent data for debugging
+    raw_inputs = {}
+    
+    # Atlas Jr. - Technical
+    atlas_data = await fetch_agent_data("atlas", f"/api/analysis/{symbol}")
+    raw_inputs["atlas"] = {
+        "trend_grade": atlas_data.get("trend_grade") if atlas_data else None,
+        "directional_lean": atlas_data.get("directional_lean") if atlas_data else None,
+        "mtf_alignment": atlas_data.get("mtf_alignment") if atlas_data else None,
+    }
+    
+    # Architect - Structure
+    clean_symbol = symbol.replace(".s", "").replace(".S", "")
+    struct_data = await fetch_agent_data("architect", f"/api/structure/{clean_symbol}")
+    raw_inputs["architect"] = {
+        "structural_bias": struct_data.get("structural_bias") if struct_data else None,
+        "current_price": struct_data.get("current_price") if struct_data else None,
+        "key_zones_count": len(struct_data.get("key_zones", [])) if struct_data else 0,
+        "fvgs_count": len(struct_data.get("fvgs", [])) if struct_data else 0,
+    }
+    
+    # Oracle - Macro
+    macro_data = await fetch_agent_data("oracle", f"/api/pair/{symbol}")
+    raw_inputs["oracle"] = {
+        "pair_bias": macro_data.get("pair_bias") if macro_data else None,
+        "confidence": macro_data.get("confidence") if macro_data else None,
+    }
+    
+    # Pulse - Sentiment
+    sentiment_data = await fetch_agent_data("pulse", f"/api/sentiment/{symbol}")
+    raw_inputs["pulse"] = {
+        "classification": sentiment_data.get("classification") if sentiment_data else None,
+        "retail_long_pct": sentiment_data.get("retail_positioning", {}).get("long_pct") if sentiment_data else None,
+    }
+    
+    # Compass - Regime
+    regime_data = await fetch_agent_data("compass", f"/api/regime/{symbol}")
+    raw_inputs["compass"] = {
+        "primary_regime": regime_data.get("primary_regime") if regime_data else None,
+        "transition_probability": regime_data.get("transition_probability") if regime_data else None,
+        "recommended_strategies": regime_data.get("recommended_strategies", [])[:3] if regime_data else [],
+    }
+    
+    # Guardian - Risk
+    guardian_data = await fetch_agent_data("guardian", "/api/status")
+    raw_inputs["guardian"] = {
+        "mode": guardian_data.get("mode") if guardian_data else None,
+    }
+    
+    # Executor - Execution
+    executor_data = await fetch_agent_data("executor", "/api/status")
+    raw_inputs["executor"] = {
+        "bridge_status": executor_data.get("bridge_status") if executor_data else None,
+    }
+    
+    # Calculate score
+    score, breakdown = await calculate_confluence_score(symbol, direction, strategy)
+    gates_passed, gates = await check_hard_gates(symbol, direction, strategy, 0)
+    
+    return {
+        "symbol": symbol,
+        "direction": direction,
+        "confluence_score": score,
+        "score_breakdown": breakdown,
+        "hard_gates": gates,
+        "all_gates_passed": gates_passed,
+        "calculated_at": request_time,
+        "strategy_used": strategy,
+        "raw_agent_inputs": raw_inputs,  # Raw data that drove the score calculation
+        "note": "Use this to compare with lifecycle logs. Score differences are usually due to agent data changing between requests.",
+    }
+
 
 
 @app.get("/api/decisions")

@@ -720,6 +720,10 @@ class LifecycleManager:
                     breakdown = data.get("score_breakdown", {})
                     # Simplify breakdown for logging
                     simple_breakdown = {k: v.get("score", 0) for k, v in breakdown.items()}
+                    
+                    # Diagnostic: log component scores for debugging score discrepancies
+                    print(f"   [{symbol}] 🔍 Confluence breakdown: {simple_breakdown}")
+                    
                     return score, simple_breakdown
         except Exception as e:
             print(f"[Lifecycle] Confluence fetch error: {e}")
