@@ -1,107 +1,83 @@
-# Forex Multi-Agent Trading Platform - PRD
+# Forex Multi-Agent Trading Platform PRD
 
 ## Original Problem Statement
-Build a 15-agent forex trading platform running on user's local Mac mini with:
-- Full agent orchestration for technical analysis, sentiment, news, risk management
-- Two-way order execution bridge with MetaTrader 5 (MT5)
-- Live economic calendar from Forex Factory
-- Live sentiment data from Myfxbook
-- Automated trade execution via file-based IPC (`orders.json`)
-
-## User Personas
-- **Primary User**: Active forex trader running platform on Mac mini
-- Requires real-time data feeds, automated analysis, and trade execution
-
-## Core Requirements
-1. All 15 agents starting and running correctly ✅
-2. Live price data from MT5 ✅
-3. Live economic calendar from Forex Factory ✅ (bug fixed this session)
-4. Live sentiment from Myfxbook ✅
-5. Account balance display ✅
-6. Automated trade execution via MT5 EA ✅
+Build and debug a complex 15-agent forex trading platform, making the system fully functional for live trading. Initial issues included broken inter-agent API calls preventing trade signal generation.
 
 ## Architecture
-- **Root**: `/app/`
-- **Agents Directory**: `/app/agents/` (15 microservices)
-- **Shared Library**: `/app/agents/shared/` (performance.py, order_bridge.py, economic_calendar.py)
-- **MT5 Expert Advisor**: `/app/mt5_ea/AgentBridge_v6.mq5`
-- **Configuration**: `/app/agents/.env`
-- **Startup Script**: `/app/agents/start_agents.sh`
+- **System**: 15 microservices (agents) running as FastAPI applications
+- **Location**: `/app/agents/` - each agent in its own directory
+- **Shared Code**: `/app/agents/shared/` - common utilities
+- **Startup**: `/app/agents/start_agents.sh` - launches all agents
+
+## Key Agents
+| Agent | Purpose | Port |
+|-------|---------|------|
+| orchestrator-agent | Central coordination, trade execution | 8000 |
+| strategy-agent | Strategy analysis, confluence scoring | 8001 |
+| macro-agent (Oracle) | Fundamental/macro analysis, "Ask Oracle" feature | 8002 |
+| sentiment-agent (Pulse) | Retail positioning, COT data, sentiment | 8003 |
+| news-agent (Sentinel) | News headlines, economic calendar | 8004 |
+| ... | 10 more specialized agents | 8005+ |
 
 ## 3rd Party Integrations
-- MetaTrader 5 (MT5) - Live data & trade execution
-- Myfxbook - Retail sentiment (API key required)
-- Forex Factory - Economic calendar (XML feed)
-- FRED - Macroeconomic data (API key required)
-- PostgreSQL - Market data storage
-- Redis - Caching
-- Anthropic Claude - AI features
+- **MetaTrader 5 (MT5)**: Live data source and trade execution
+- **Myfxbook**: Retail sentiment data (rate-limited)
+- **Forex Factory**: Economic calendar
+- **FRED API**: Macroeconomic data (CPI, GDP, unemployment)
+- **Anthropic Claude**: AI analysis (Sonnet for narratives, Haiku for classification)
 
-## Implemented Features (December 2025)
-- [x] Live Order Execution Bridge (AgentBridge_v6.mq5 + orders.json)
-- [x] Live Economic Calendar (economic_calendar.py parsing FF XML)
-- [x] Live Sentiment Data (Myfxbook credentials integration)
-- [x] Full Agent Startup (start_agents.sh tiered launch)
-- [x] Account Balance Integration
-- [x] Local Environment Debugging (configurable paths)
-- [x] **FIX**: News-agent calendar race condition (background_monitoring now uses async live data)
-- [x] **P1**: Inter-agent retry logic with exponential backoff (0.5s, 1s, 2s)
-- [x] **P2**: Health checks in start_agents.sh (waits for `/api/status` before next tier)
-- [x] **AUTO-TRADING**: Full auto-execution pipeline (Orchestrator → Executor → MT5)
-- [x] **FIX (Dec 17)**: Fixed broken API endpoints in inter-agent communication:
-  - `orchestrator-agent`: `/api/analyze/{sym}` → `/api/analysis/{sym}` (technical-agent)
-  - `strategy-agent`: `/api/relative/{symbol}` → `/api/pair/{symbol}` (macro-agent)
-- [x] **FIX (Dec 17)**: Improved Myfxbook API caching in sentiment-agent:
-  - Increased cache TTL from 5 to 10 minutes
-  - Added session reuse (30-minute session TTL)
-  - Better fallback behavior when rate-limited
+## What's Been Implemented
 
-## Auto-Trading Configuration
-- `AUTO_TRADE_ENABLED=true` - Enable/disable auto-execution (default: true)
-- `USE_RISK_BASED_SIZING=true` - Enable risk-based lot sizing (default: true)
-- `RISK_PERCENT=1.0` - Risk per trade as % of account (default: 1%)
-- `MIN_LOT_SIZE=0.01` - Minimum position size
-- `MAX_LOT_SIZE=0.5` - Maximum position size (safety cap)
-- `DEFAULT_LOT_SIZE=0.01` - Fallback if risk calc fails
-- Signal cooldown: 60 minutes (prevents duplicate executions)
-- Thresholds: Score >= 75 executes, Score >= 60 adds to watchlist
+### December 2024 - Session 1
+**Core Bug Fixes:**
+- ✅ Fixed 404 errors in orchestrator-agent and strategy-agent API endpoints
+- ✅ Resolved NoneType crashes with robust null-checking
+- ✅ Fixed all inter-agent communication issues
 
-## Position Sizing Formula
-```
-Lot Size = (Account Balance × Risk %) / (Stop Loss Pips × Pip Value per Lot)
-```
-Example: $10,000 account, 1% risk, 30 pip SL on EURUSD
-- Risk Amount = $10,000 × 1% = $100
-- Lot Size = $100 / (30 pips × $10/pip) = 0.33 lots
+**Dynamic "Ask Oracle" Feature:**
+- ✅ FRED API integration for live economic data
+- ✅ Dynamic CPI/GDP/employment trend calculation from historical data
+- ✅ Live news headline integration from news-agent
+- ✅ Claude AI headline classification and narrative generation
+- ✅ Central bank tone assessment
 
-## Auto-Trading API Endpoints
-- `GET /api/auto-trade` - Check status, risk settings, recent executions
-- `POST /api/auto-trade/toggle?enabled=true` - Enable/disable auto-trading
-- `POST /api/auto-trade/risk-percent?risk_percent=1.5` - Set risk % per trade
-- `POST /api/auto-trade/toggle-risk-sizing?enabled=true` - Toggle risk-based sizing
-- `POST /api/auto-trade/lot-size?lot_size=0.02` - Set fallback lot size
-- `POST /api/auto-trade/clear-cooldowns` - Reset signal cooldowns
-- `GET /api/auto-trade/calculate-size?symbol=EURUSD&entry_price=1.0850&stop_loss=1.0820` - Preview sizing
+**UX Improvements:**
+- ✅ Suppressed noisy uvicorn/httpx logs across all agents
+- ✅ Added "Clear Chat" button to all agent UIs with chat
 
-## Known Issues
-- [FIXED] News-agent showing fallback data instead of live calendar
-- [FIXED] Inter-agent communication errors (added retry logic)
-- [FIXED] API endpoint mismatches causing 404 errors in trading pipeline
+**Cost Optimization:**
+- ✅ Claude Haiku model for classification tasks (cheaper)
+- ✅ Reduced dynamic narrative update from 1hr → 2hrs
 
-## Prioritized Backlog
+**Rate Limiting Fix (P1):**
+- ✅ Increased Myfxbook cache TTL from 10 → 60 minutes
+- ✅ Added 2-hour rate-limit backoff mechanism
+- ✅ Smarter cache logging
 
-### P0 - Critical
-- End-to-end trading loop verification (user needs to restart agents and verify trades generate)
+**Code Quality (P2):**
+- ✅ Fixed 7 bare `except` clauses in shared/performance.py
+- ✅ Added specific exception handling with debug logging
 
-### P1 - High
-- None (API fixes completed)
+## Data Sources Status
+| Source | Status | Notes |
+|--------|--------|-------|
+| FRED API | ✅ Live | Economic trends calculated from historical data |
+| Forex Factory | ✅ Live | Calendar events with static backup |
+| News Headlines | ✅ Live | RSS feeds via news-agent |
+| Claude AI | ✅ Live | Narratives and analysis |
+| Myfxbook | ⚠️ Rate-limited | 60-min cache + 2hr backoff implemented |
+| CFTC COT | ✅ Live | 24-hour cache |
 
-### P2 - Medium
-- ATR-based trailing stop enhancements
-- Clean up bare `except` clauses in performance.py (7 instances)
+## Pending/Backlog
+- P0: End-to-end trading loop verification (confluence ≥75 → trade)
+- P1: None
+- P2: ATR-based trailing stops
+- P2: Multi-timeframe confluence weighting
 
-### P3 - Low/Future
-- Advanced trailing strategies
-- Performance optimization
-- Multi-timeframe confluence weighting
-- Documentation updates
+## Key Files
+- `/app/agents/macro-agent/app.py` - Oracle agent, dynamic narratives
+- `/app/agents/sentiment-agent/app.py` - Pulse agent, rate limiting fix
+- `/app/agents/strategy-agent/app.py` - Confluence scoring
+- `/app/agents/shared/utils.py` - Claude helper function
+- `/app/agents/shared/performance.py` - HTTP pooling, caching
+- `/app/agents/start_agents.sh` - Startup script

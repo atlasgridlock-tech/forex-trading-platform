@@ -254,8 +254,9 @@ class RedisCache:
                 value = await self._redis.get(key)
                 if value:
                     return json.loads(value)
-            except:
-                pass
+            except (redis.RedisError, json.JSONDecodeError) as e:
+                if DEBUG_HTTP:
+                    print(f"[RedisCache] GET error for {key}: {e}")
         return self._fallback.get(key)
     
     async def set(self, key: str, value: Any, ttl: int = None):
@@ -265,8 +266,9 @@ class RedisCache:
             try:
                 await self._redis.setex(key, ttl, json.dumps(value, default=str))
                 return
-            except:
-                pass
+            except (redis.RedisError, TypeError) as e:
+                if DEBUG_HTTP:
+                    print(f"[RedisCache] SET error for {key}: {e}")
         self._fallback.set(key, value, ttl)
     
     async def delete(self, key: str):
@@ -274,8 +276,9 @@ class RedisCache:
         if self._connected:
             try:
                 await self._redis.delete(key)
-            except:
-                pass
+            except redis.RedisError as e:
+                if DEBUG_HTTP:
+                    print(f"[RedisCache] DELETE error for {key}: {e}")
         self._fallback.delete(key)
     
     async def close(self):

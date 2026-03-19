@@ -45,11 +45,14 @@ MYFXBOOK_SESSION_TTL_MINUTES = 30  # Session valid for 30 minutes
 
 SYMBOLS = FOREX_SYMBOLS
 
-# Sentiment cache with TTL - INCREASED to reduce API calls
+# Sentiment cache with TTL - SIGNIFICANTLY INCREASED to avoid API rate limits
+# Myfxbook has strict rate limits, so we cache aggressively
 sentiment_data: Dict[str, dict] = {}
 retail_positioning_cache: Dict[str, dict] = {}
 retail_cache_time: datetime = None
-CACHE_TTL_MINUTES = 10  # Increased from 5 to 10 minutes to reduce API rate limit hits
+CACHE_TTL_MINUTES = 60  # Cache for 1 hour - retail sentiment doesn't change rapidly
+RATE_LIMIT_BACKOFF_MINUTES = 120  # If rate limited, wait 2 hours before retry
+rate_limit_until: datetime = None  # Track when we can retry after rate limit
 
 # Using ChatRequest from shared module
 
@@ -97,13 +100,25 @@ FALLBACK_POSITIONING = {
 from urllib.parse import unquote
 
 async def fetch_myfxbook_sentiment() -> Dict[str, dict]:
-    """Fetch real retail positioning data from Myfxbook API with session reuse."""
-    global retail_positioning_cache, retail_cache_time, myfxbook_session, myfxbook_session_time
+    """Fetch real retail positioning data from Myfxbook API with aggressive caching."""
+    global retail_positioning_cache, retail_cache_time, myfxbook_session, myfxbook_session_time, rate_limit_until
+    
+    now = datetime.utcnow()
+    
+    # Check if we're in rate-limit backoff period
+    if rate_limit_until and now < rate_limit_until:
+        remaining = (rate_limit_until - now).total_seconds() / 60
+        if retail_positioning_cache:
+            print(f"[Pulse] ⏳ Rate limit backoff active ({remaining:.0f}min remaining) - using cached data")
+            return retail_positioning_cache
+        print(f"[Pulse] ⏳ Rate limit backoff active ({remaining:.0f}min remaining) - using fallback")
+        return FALLBACK_POSITIONING
     
     # Check cache first - if data is fresh, return it immediately
-    if retail_cache_time and (datetime.utcnow() - retail_cache_time).total_seconds() < CACHE_TTL_MINUTES * 60:
+    if retail_cache_time and (now - retail_cache_time).total_seconds() < CACHE_TTL_MINUTES * 60:
         if retail_positioning_cache:
-            print(f"[Pulse] 📦 Using cached sentiment data ({(datetime.utcnow() - retail_cache_time).total_seconds():.0f}s old)")
+            cache_age_min = (now - retail_cache_time).total_seconds() / 60
+            print(f"[Pulse] 📦 Using cached sentiment data ({cache_age_min:.1f}min old, refreshes in {CACHE_TTL_MINUTES - cache_age_min:.1f}min)")
             return retail_positioning_cache
     
     if not MYFXBOOK_EMAIL or not MYFXBOOK_PASSWORD:
@@ -120,19 +135,19 @@ async def fetch_myfxbook_sentiment() -> Dict[str, dict]:
         need_login = True
         
         if session and myfxbook_session_time:
-            session_age = (datetime.utcnow() - myfxbook_session_time).total_seconds()
+            session_age = (now - myfxbook_session_time).total_seconds()
             if session_age < MYFXBOOK_SESSION_TTL_MINUTES * 60:
                 need_login = False
-                print(f"[Pulse] 🔑 Reusing existing Myfxbook session ({session_age:.0f}s old)")
+                print(f"[Pulse] 🔑 Reusing existing Myfxbook session ({session_age/60:.1f}min old)")
         
         # Login if needed
         if need_login:
+            print("[Pulse] 🔐 Attempting Myfxbook login...")
             login_url = f"https://www.myfxbook.com/api/login.json?email={MYFXBOOK_EMAIL}&password={MYFXBOOK_PASSWORD}"
             login_response = await client.get(login_url, timeout=20.0)
             
             if login_response.status_code != 200:
                 print(f"[Pulse] ❌ Myfxbook login failed: HTTP {login_response.status_code}")
-                # Return cached data if available, otherwise fallback
                 if retail_positioning_cache:
                     print("[Pulse] ⚠️ Using stale cached data due to login failure")
                     return retail_positioning_cache
@@ -142,11 +157,12 @@ async def fetch_myfxbook_sentiment() -> Dict[str, dict]:
             if login_data.get("error"):
                 error_msg = login_data.get('message', 'Unknown error')
                 print(f"[Pulse] ❌ Myfxbook login error: {error_msg}")
-                # Check for rate limit error
+                # Check for rate limit error - activate backoff
                 if "limit" in error_msg.lower():
-                    print("[Pulse] ⚠️ API limit reached - extending cache TTL")
-                    # Return cached data if available
+                    rate_limit_until = now + timedelta(minutes=RATE_LIMIT_BACKOFF_MINUTES)
+                    print(f"[Pulse] 🚫 API RATE LIMITED - backing off for {RATE_LIMIT_BACKOFF_MINUTES} minutes (until {rate_limit_until.strftime('%H:%M:%S')})")
                     if retail_positioning_cache:
+                        print("[Pulse] 📦 Will use cached data during backoff period")
                         return retail_positioning_cache
                 return FALLBACK_POSITIONING
             
@@ -159,8 +175,8 @@ async def fetch_myfxbook_sentiment() -> Dict[str, dict]:
             
             # Save session for reuse
             myfxbook_session = session
-            myfxbook_session_time = datetime.utcnow()
-            print(f"[Pulse] ✅ Myfxbook login successful (new session)")
+            myfxbook_session_time = now
+            print("[Pulse] ✅ Myfxbook login successful (new session)")
         
         # Fetch sentiment with the session
         sentiment_url = f"https://www.myfxbook.com/api/get-community-outlook.json?session={session}"
@@ -195,14 +211,20 @@ async def fetch_myfxbook_sentiment() -> Dict[str, dict]:
                 
                 if positions:
                     retail_positioning_cache = positions
-                    retail_cache_time = datetime.utcnow()
-                    print(f"[Pulse] ✅ Fetched REAL sentiment for {len(positions)} pairs from Myfxbook API")
+                    retail_cache_time = now
+                    # Clear any rate limit backoff since we succeeded
+                    rate_limit_until = None
+                    print(f"[Pulse] ✅ Fetched REAL sentiment for {len(positions)} pairs (cached for {CACHE_TTL_MINUTES}min)")
                     return positions
                 else:
                     print("[Pulse] ⚠️ No matching symbols in Myfxbook response")
             else:
                 error_msg = data.get('message', 'Unknown error')
                 print(f"[Pulse] ❌ Myfxbook API error: {error_msg}")
+                # Check for rate limit on sentiment endpoint too
+                if "limit" in error_msg.lower():
+                    rate_limit_until = now + timedelta(minutes=RATE_LIMIT_BACKOFF_MINUTES)
+                    print(f"[Pulse] 🚫 API RATE LIMITED on sentiment fetch - backing off for {RATE_LIMIT_BACKOFF_MINUTES} minutes")
                 # Invalidate session if it failed
                 if "session" in error_msg.lower() or "invalid" in error_msg.lower():
                     myfxbook_session = ""
@@ -608,7 +630,8 @@ etc."""
                             sentiments[headlines_to_analyze[idx]] = "RISK_ON"
                         else:
                             sentiments[headlines_to_analyze[idx]] = "NEUTRAL"
-                except:
+                except (IndexError, KeyError):
+                    # Skip malformed response lines
                     pass
         
         print(f"[Pulse] 🤖 AI analyzed {len(sentiments)} headlines: {sum(1 for s in sentiments.values() if s == 'RISK_OFF')} risk-off, {sum(1 for s in sentiments.values() if s == 'RISK_ON')} risk-on")
