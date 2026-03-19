@@ -1577,7 +1577,12 @@ async def get_pairs():
 
 @app.get("/api/pair/{pair}")
 async def get_pair(pair: str):
-    return pair_analysis.get(pair.upper(), {"error": "Not found"})
+    analysis = pair_analysis.get(pair.upper(), {"error": "Not found"})
+    if "error" not in analysis:
+        # Add aliases for orchestrator compatibility
+        analysis["score_difference"] = analysis.get("macro_differential", 0)
+        analysis["relative_bias"] = analysis.get("pair_bias", "neutral")
+    return analysis
 
 
 @app.get("/api/events")
