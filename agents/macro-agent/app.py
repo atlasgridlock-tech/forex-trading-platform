@@ -811,6 +811,7 @@ async def home():
         <div class="chat-input">
             <input type="text" id="input" placeholder="Ask about macro..." onkeypress="if(event.key==='Enter')sendMessage()">
             <button onclick="sendMessage()">Send</button>
+            <button onclick="clearChat()" style="background: #666;">Clear</button>
         </div>
     </div>
     <script>
@@ -869,18 +870,28 @@ async def home():
 
 @app.post("/chat")
 async def chat(request: ChatRequest):
-    # Build a more compact but complete context for Claude
-    # Currency profiles - just the key metrics
+    # Build a complete context for Claude with all currencies and pairs
+    # Currency profiles - include detailed scores
     currency_summary = {}
     for curr, data in currency_profiles.items():
+        scores = data.get("scores", {})
         currency_summary[curr] = {
-            "score": data.get("fundamental_score", 0),
+            "overall_score": data.get("overall_score", 50),
             "stance": data.get("stance", "neutral"),
-            "rate": data.get("interest_rate", 0),
-            "momentum": data.get("momentum_score", 50)
+            "current_rate": data.get("current_rate", 0),
+            "scores": {
+                "interest_rate": scores.get("interest_rate", 50),
+                "inflation": scores.get("inflation", 50),
+                "growth": scores.get("growth", 50),
+                "employment": scores.get("employment", 50),
+                "cb_tone": scores.get("cb_tone", 50),
+                "momentum": scores.get("momentum", 50)
+            },
+            "medium_term_bias": data.get("medium_term_bias", "neutral"),
+            "key_narrative": data.get("key_narrative", "")
         }
     
-    # Pair analysis - key fields only
+    # Pair analysis - key fields
     pair_summary = {}
     for pair, data in pair_analysis.items():
         pair_summary[pair] = {
@@ -888,19 +899,31 @@ async def chat(request: ChatRequest):
             "confidence": data.get("confidence", 50),
             "base_score": data.get("base_score", 50),
             "quote_score": data.get("quote_score", 50),
-            "differential": data.get("macro_differential", 0),
-            "rate_diff": data.get("rate_differential", 0)
+            "macro_differential": data.get("macro_differential", 0),
+            "rate_differential": data.get("rate_differential", 0),
+            "time_horizon": data.get("time_horizon", "medium_term")
         }
     
     context = f"""You are Oracle, the fundamental macro analysis agent for a forex trading system.
 
-Currency Macro Profiles (8 currencies):
+## Currency Profile Components
+Each currency profile score (0-100) is calculated from:
+- **Interest Rate (25%)**: Current rate level + trend (rising/cutting) + expectations
+- **Inflation (15%)**: CPI level vs 2% target + trend (declining is good)
+- **Growth (20%)**: GDP level + trend (improving/slowing)
+- **Employment (15%)**: Unemployment rate + trend
+- **CB Tone (15%)**: Central bank stance (hawkish=bullish, dovish=bearish)
+- **Momentum (10%)**: Combined trend direction of all factors
+
+Stance thresholds: >60 bullish, 55-60 slightly_bullish, 45-55 neutral, 40-45 slightly_bearish, <40 bearish
+
+## Currency Macro Profiles (8 currencies):
 {json.dumps(currency_summary, indent=2)}
 
-Pair-Relative Analysis (9 pairs):
+## Pair-Relative Analysis (9 pairs):
 {json.dumps(pair_summary, indent=2)}
 
-Answer questions about macro fundamentals, currency strength, and pair biases based on this data."""
+Answer questions about macro fundamentals, currency strength, pair biases, and explain WHY based on the component scores."""
     
     response = await call_claude(request.message, context, agent_name=AGENT_NAME)
     return {"response": response}

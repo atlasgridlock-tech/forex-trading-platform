@@ -566,6 +566,7 @@ async def home():
         <div class="chat-input">
             <input type="text" id="input" placeholder="Ask about portfolio..." onkeypress="if(event.key==='Enter')sendMessage()">
             <button onclick="sendMessage()">Send</button>
+            <button onclick="clearChat()" style="background: #666;">Clear</button>
         </div>
     </div>
     <script>
