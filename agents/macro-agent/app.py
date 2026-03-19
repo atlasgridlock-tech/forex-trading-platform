@@ -343,37 +343,39 @@ async def fetch_upcoming_events_from_sentinel() -> Dict[str, List[dict]]:
     
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            # Fetch calendar from Sentinel
-            response = await client.get(f"{SENTINEL_URL}/api/calendar")
+            # Fetch events from Sentinel (correct endpoint is /api/events)
+            response = await client.get(f"{SENTINEL_URL}/api/events")
             if response.status_code == 200:
-                calendar = response.json()
-                events = calendar.get("events", calendar.get("upcoming", []))
+                events = response.json()
                 
-                now = datetime.utcnow()
-                for event in events:
-                    # Parse event date
-                    event_date_str = event.get("date") or event.get("datetime", "")
-                    try:
-                        if "T" in event_date_str:
-                            event_date = datetime.fromisoformat(event_date_str.replace("Z", ""))
-                        else:
-                            event_date = datetime.strptime(event_date_str, "%Y-%m-%d")
-                    except:
-                        continue
+                # Events is a list directly
+                if isinstance(events, list):
+                    now = datetime.utcnow()
+                    for event in events:
+                        # Parse event date/time
+                        event_time_str = event.get("time", "")
+                        try:
+                            if isinstance(event_time_str, str):
+                                event_date = datetime.fromisoformat(event_time_str.replace("Z", ""))
+                            else:
+                                continue
+                        except:
+                            continue
+                        
+                        # Only include events in next 14 days
+                        days_until = (event_date - now).days
+                        if 0 <= days_until <= 14:
+                            currency = event.get("currency", "").upper()
+                            if currency in events_by_currency:
+                                events_by_currency[currency].append({
+                                    "event": event.get("title") or event.get("event", "Unknown"),
+                                    "days": days_until,
+                                    "impact": event.get("impact", "medium"),
+                                    "date": event_date.strftime("%Y-%m-%d %H:%M")
+                                })
                     
-                    # Only include events in next 14 days
-                    days_until = (event_date - now).days
-                    if 0 <= days_until <= 14:
-                        currency = event.get("currency", "").upper()
-                        if currency in events_by_currency:
-                            events_by_currency[currency].append({
-                                "event": event.get("title") or event.get("event", "Unknown"),
-                                "days": days_until,
-                                "impact": event.get("impact", "medium"),
-                                "date": event_date.strftime("%Y-%m-%d")
-                            })
-                
-                print(f"[Oracle] 📅 Loaded {sum(len(v) for v in events_by_currency.values())} upcoming events from Sentinel")
+                    total = sum(len(v) for v in events_by_currency.values())
+                    print(f"[Oracle] 📅 Loaded {total} upcoming events from Sentinel")
     except Exception as e:
         print(f"[Oracle] ⚠️ Could not fetch events from Sentinel: {e}")
     
@@ -394,19 +396,12 @@ async def fetch_news_headlines() -> Dict[str, List[str]]:
                 # Process headlines - they may be in different formats
                 headlines_list = news_data if isinstance(news_data, list) else news_data.get("headlines", [])
                 
-                # Extract headline text
-                all_headlines = []
-                for item in headlines_list:
-                    if isinstance(item, str):
-                        headline = item
-                    else:
-                        headline = item.get("title") or item.get("headline", "")
-                    if headline and len(headline) > 10:
-                        all_headlines.append(headline)
+                # Filter headlines for quality and relevance
+                quality_headlines = filter_quality_headlines(headlines_list)
                 
-                if all_headlines:
+                if quality_headlines:
                     # Use Claude to classify headlines by currency
-                    headlines_by_currency = await classify_headlines_by_currency(all_headlines[:30])  # Limit to 30 for efficiency
+                    headlines_by_currency = await classify_headlines_by_currency(quality_headlines[:30])  # Limit to 30 for efficiency
                     
                 total = sum(len(v) for v in headlines_by_currency.values())
                 print(f"[Oracle] 📰 Claude classified {total} headlines across {sum(1 for v in headlines_by_currency.values() if v)} currencies")
@@ -414,6 +409,75 @@ async def fetch_news_headlines() -> Dict[str, List[str]]:
         print(f"[Oracle] ⚠️ Could not fetch headlines from Sentinel: {e}")
     
     return headlines_by_currency
+
+
+def filter_quality_headlines(headlines_list: List) -> List[str]:
+    """Filter headlines for quality and macro-relevance.
+    
+    Quality criteria:
+    1. Must be about macro/central banks/economic data (not just price movements)
+    2. Must have actual content (not too short)
+    3. Prioritize high-impact news
+    """
+    quality_headlines = []
+    
+    # Keywords that indicate macro-relevant news (high priority)
+    macro_keywords = [
+        # Central banks
+        "FED", "ECB", "BOE", "BOJ", "RBA", "RBNZ", "BOC", "SNB",
+        "FEDERAL RESERVE", "CENTRAL BANK", "RATE", "POLICY",
+        "POWELL", "LAGARDE", "BAILEY", "UEDA", "BULLOCK",
+        "FOMC", "MPC", "HAWKISH", "DOVISH", "TAPER", "QE", "QT",
+        
+        # Economic data
+        "GDP", "CPI", "INFLATION", "EMPLOYMENT", "NFP", "JOBS", "PAYROLL",
+        "UNEMPLOYMENT", "PMI", "RETAIL SALES", "HOUSING", "TRADE BALANCE",
+        "CONSUMER", "MANUFACTURING", "SERVICES",
+        
+        # Economic outlook
+        "RECESSION", "GROWTH", "SLOWDOWN", "EXPANSION", "RECOVERY",
+        "ECONOMY", "ECONOMIC", "FORECAST", "OUTLOOK",
+        
+        # Major events
+        "TARIFF", "TRADE WAR", "SANCTIONS", "GEOPOLITICAL", "WAR", "CRISIS"
+    ]
+    
+    # Keywords that indicate low-value news (skip these)
+    skip_keywords = [
+        "TECHNICAL ANALYSIS", "SUPPORT LEVEL", "RESISTANCE",
+        "CHART", "FIBONACCI", "MOVING AVERAGE", "RSI", "MACD",
+        "PRICE TARGET", "FORECAST:", "PREDICTION:",
+        "SPONSORED", "ADVERTISEMENT", "WEBINAR"
+    ]
+    
+    for item in headlines_list:
+        # Extract headline text
+        if isinstance(item, str):
+            headline = item
+        else:
+            headline = item.get("title") or item.get("headline", "")
+        
+        if not headline or len(headline) < 15:
+            continue
+        
+        headline_upper = headline.upper()
+        
+        # Skip low-value headlines
+        if any(skip in headline_upper for skip in skip_keywords):
+            continue
+        
+        # Prioritize macro-relevant headlines
+        is_macro_relevant = any(kw in headline_upper for kw in macro_keywords)
+        
+        if is_macro_relevant:
+            # High priority - add to front
+            quality_headlines.insert(0, headline)
+        elif len(quality_headlines) < 50:
+            # Lower priority but still include if we need more
+            quality_headlines.append(headline)
+    
+    # Limit to top 30 quality headlines
+    return quality_headlines[:30]
 
 
 async def classify_headlines_by_currency(headlines: List[str]) -> Dict[str, List[str]]:
