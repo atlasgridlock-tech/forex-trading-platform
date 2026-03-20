@@ -1412,16 +1412,28 @@ def get_dashboard_html(
                 const symbols = Object.keys(summaryData.symbols || {{}}).slice(0, 8).join(',');
                 
                 if (!symbols) {{
-                    container.innerHTML = '<div class="no-history">No data available</div>';
+                    container.innerHTML = '<div class="no-history"><p>No score history data available yet.</p><p class="hint">Data is recorded during lifecycle scans. Wait for a few scan cycles (~5 mins).</p></div>';
                     return;
                 }}
                 
                 const chartUrl = `/api/score-history/compare/chart?symbols=${{symbols}}&hours=${{hours}}&_t=${{Date.now()}}`;
                 
-                container.innerHTML = `
-                    <img src="${{chartUrl}}" alt="Comparison Chart" class="score-chart-img" 
-                         onerror="this.parentElement.innerHTML='<div class=\\'no-history\\'>Chart generation failed</div>'" />
-                `;
+                // Create an image element and handle load/error
+                const img = document.createElement('img');
+                img.className = 'score-chart-img';
+                img.alt = 'Comparison Chart';
+                
+                img.onload = function() {{
+                    container.innerHTML = '';
+                    container.appendChild(img);
+                }};
+                
+                img.onerror = function() {{
+                    container.innerHTML = '<div class="no-history"><p>Chart generation failed.</p><p class="hint">This may happen if matplotlib is not properly configured. Try refreshing the page.</p></div>';
+                }};
+                
+                img.src = chartUrl;
+                
             }} catch (e) {{
                 container.innerHTML = `<div class="no-history">Error: ${{e.message}}</div>`;
             }}

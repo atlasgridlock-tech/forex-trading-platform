@@ -9,6 +9,11 @@ import json
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+
+# Set matplotlib backend BEFORE importing pyplot (required for headless/server use)
+import matplotlib
+matplotlib.use('Agg')
+
 import pandas as pd
 import mplfinance as mpf
 import matplotlib.pyplot as plt
