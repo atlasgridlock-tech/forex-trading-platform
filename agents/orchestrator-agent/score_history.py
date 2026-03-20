@@ -11,12 +11,21 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from collections import defaultdict
 
-# Set matplotlib backend BEFORE importing pyplot (required for headless/server use)
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
-from matplotlib.ticker import MaxNLocator
+# Check for matplotlib availability
+MATPLOTLIB_AVAILABLE = False
+try:
+    import matplotlib
+    matplotlib.use('Agg')  # Set backend BEFORE importing pyplot
+    import matplotlib.pyplot as plt
+    import matplotlib.dates as mdates
+    from matplotlib.ticker import MaxNLocator
+    MATPLOTLIB_AVAILABLE = True
+except ImportError:
+    print("[ScoreHistory] WARNING: matplotlib not installed. Charts will not be available.")
+    print("[ScoreHistory] Install with: pip install matplotlib")
+    plt = None
+    mdates = None
+    MaxNLocator = None
 
 # Storage path - with fallback for local development
 def get_history_path():
@@ -211,6 +220,10 @@ def generate_score_history_chart(
     Returns:
         PNG image bytes
     """
+    if not MATPLOTLIB_AVAILABLE:
+        print("[ScoreHistory] Cannot generate chart: matplotlib not installed")
+        return None
+    
     if not history:
         return None
     
@@ -372,6 +385,10 @@ def generate_multi_symbol_chart(
     """
     Generate a chart comparing confluence scores across multiple symbols.
     """
+    if not MATPLOTLIB_AVAILABLE:
+        print("[ScoreHistory] Cannot generate chart: matplotlib not installed")
+        return None
+    
     try:
         fig, ax = plt.subplots(figsize=(14, 8), facecolor=CHART_COLORS["background"])
         ax.set_facecolor(CHART_COLORS["background"])
