@@ -887,6 +887,16 @@ class LifecycleManager:
             
             self.active_trades[trade.trade_id] = trade
             
+            # Update score history to mark as actually executed
+            self._record_score_history(
+                symbol=setup.symbol,
+                score=decision.get("confluence_score", 0),
+                breakdown=decision.get("score_breakdown", {}),
+                direction=setup.direction,
+                strategy=setup.template,
+                decision="executed",  # Actually executed, not just approved
+            )
+            
             # Log to Chronicle v2.0 with full context for chart generation and journaling
             await self.post_agent("chronicle", "/api/trade/execute", {
                 "trade_id": trade.trade_id,
