@@ -316,10 +316,13 @@ def check_price_at_zone(price: float, zones: List[dict], atr: float = 0, proximi
             closest_zone = zone
     
     # Use ATR-based proximity if ATR provided, otherwise use percentage
-    # "At zone" if within 0.5 ATR or within 0.3%
+    # "At zone" if within configured ATR distance or within percentage threshold
     at_zone = False
+    # Default: 0.5 ATR is "at zone", but this can be relaxed
+    zone_proximity_atr = 0.5
+    
     if atr > 0:
-        at_zone = closest_distance_atr <= 0.5  # Within 0.5 ATR of zone
+        at_zone = closest_distance_atr <= zone_proximity_atr
     else:
         at_zone = (closest_distance / price if price > 0 else 999) <= proximity_pct
     
@@ -333,12 +336,14 @@ def check_price_at_zone(price: float, zones: List[dict], atr: float = 0, proximi
             "freshness": closest_zone.get("freshness", "unknown"),
         }
     
+    # Not strictly "at zone" but return nearest zone info for potential RSI-based direction
     return {
         "at_zone": False, 
-        "zone_type": None, 
-        "zone_price": 0, 
+        "zone_type": closest_zone.get("type", "unknown") if closest_zone else None, 
+        "zone_price": closest_zone.get("price", 0) if closest_zone else 0, 
         "distance_pct": round((closest_distance / price * 100) if price > 0 else 999, 3),
-        "distance_atr": round(closest_distance_atr, 2) if closest_distance_atr != float('inf') else 999
+        "distance_atr": round(closest_distance_atr, 2) if closest_distance_atr != float('inf') else 999,
+        "nearest_zone": closest_zone,  # Include full zone info for RSI-based fallback
     }
 
 
@@ -438,10 +443,21 @@ def determine_strategy_direction(
                 else:
                     return direction, f"FADE: At support {zone_price:.5f} → LONG (⚠️ {rsi_msg})", zone_check
         
-        # Not at any zone - check if we're in the middle of a range
+        # Not at any zone - but in mean_reverting regime, RSI extremes can give direction
         if regime in ["range_bound", "mean_reverting"]:
             dist_atr = zone_check.get('distance_atr', 999)
-            return "neutral", f"In range but not at zone ({dist_atr:.1f} ATR away, need <0.5)", empty_zone_info
+            nearest_zone_type = zone_check.get("zone_type")
+            
+            # RSI extreme-based direction for mean_reverting regime
+            if rsi <= 30:
+                # RSI oversold → LONG opportunity
+                return "bullish", f"RSI oversold ({rsi:.0f}) in {regime} → LONG fade | Nearest zone: {dist_atr:.1f} ATR away", zone_check
+            elif rsi >= 70:
+                # RSI overbought → SHORT opportunity
+                return "bearish", f"RSI overbought ({rsi:.0f}) in {regime} → SHORT fade | Nearest zone: {dist_atr:.1f} ATR away", zone_check
+            
+            # Not at zone and RSI not extreme - no clear direction
+            return "neutral", f"In {regime} but not at zone ({dist_atr:.1f} ATR) and RSI neutral ({rsi:.0f})", empty_zone_info
         
         return "neutral", "Not at a key zone for range fade", empty_zone_info
     

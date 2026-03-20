@@ -1295,6 +1295,22 @@ class LifecycleManager:
                         cycle_result["trades_approved"] += 1
                 else:
                     cycle_result["trades_rejected"] += 1
+            else:
+                # No setup generated - still record score history for tracking
+                # This helps visualize why a symbol isn't generating trades
+                try:
+                    # Get confluence score anyway for history tracking
+                    score, breakdown = await self.get_confluence_score(symbol, "long")
+                    self._record_score_history(
+                        symbol=symbol,
+                        score=score,
+                        breakdown=breakdown,
+                        direction="neutral",
+                        strategy="none_qualified",
+                        decision="no_setup",
+                    )
+                except Exception as e:
+                    pass  # Don't let score history break the main flow
         
         # Monitor active trades (Stage 10-11)
         for trade_id, trade in list(self.active_trades.items()):
