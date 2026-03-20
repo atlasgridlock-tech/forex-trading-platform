@@ -81,14 +81,20 @@ Build and debug a complex 15-agent forex trading platform, making the system ful
 - ✅ Timestamps on all confluence responses for timing comparison
 - ✅ Detailed breakdown logging in lifecycle for troubleshooting
 
+**Strategy Regime Template Updates (Reduces "regime invalid" rejections):**
+- ✅ TREND_CONTINUATION: Added `breakout_ready` to allowed (breakouts often become trends)
+- ✅ PULLBACK_IN_TREND: Added `breakout_ready` to allowed, removed from invalid
+- ✅ BREAKOUT: Added `trending` to allowed, removed from invalid
+- ✅ VOLATILITY_EXPANSION: Added `trending` to allowed (vol expands in strong trends)
+
 **Status:**
 - System is working end-to-end: pairs being added to watchlist (60-74 score)
+- Regime restrictions loosened - more strategies will now qualify
 - Waiting for confluence ≥75 to verify trade execution
 
 ## Pending/Backlog
 - P0: Verify trade execution when confluence ≥75 (USER VERIFICATION PENDING)
-- P1: Score discrepancy between dashboard/lifecycle (timing issue - documented, not a bug)
-- P2: Fine-tune strategy regime templates (reduce "regime invalid" rejections)
+- P1: Consider lowering execution threshold from 75 → 70 if scores remain in 70-74 range
 - P2: ATR-based trailing stops
 - P2: Multi-timeframe confluence weighting
 

@@ -53,7 +53,7 @@ STRATEGY_TEMPLATES = {
     "TREND_CONTINUATION": {
         "name": "Trend Continuation",
         "description": "Trade with established trend on pullback completion",
-        "allowed_regimes": ["trending", "high_vol_expansion"],
+        "allowed_regimes": ["trending", "high_vol_expansion", "breakout_ready"],  # Added breakout_ready - breakouts often become trends
         "invalid_regimes": ["range_bound", "mean_reverting", "unstable_noisy", "event_driven"],
         "required_confluence": ["trend_grade_b_plus", "structure_confirms", "macro_aligns", "no_news_2h"],
         "max_spread_pips": 3.0,  # Relaxed from 2.0 - realistic for majors
@@ -66,8 +66,8 @@ STRATEGY_TEMPLATES = {
     "PULLBACK_IN_TREND": {
         "name": "Pullback Entry",
         "description": "Enter on confirmed pullback in strong trend",
-        "allowed_regimes": ["trending"],
-        "invalid_regimes": ["range_bound", "breakout_ready", "unstable_noisy", "event_driven"],
+        "allowed_regimes": ["trending", "breakout_ready"],  # Added breakout_ready - pullbacks occur in breakout consolidation
+        "invalid_regimes": ["range_bound", "unstable_noisy", "event_driven"],  # Removed breakout_ready from invalid
         "required_confluence": ["trend_grade_a_b", "price_at_structure", "rsi_pullback_zone"],
         "max_spread_pips": 2.5,  # Relaxed from 1.5
         "min_atr_pct": 40,
@@ -79,8 +79,8 @@ STRATEGY_TEMPLATES = {
     "BREAKOUT": {
         "name": "Breakout Trade",
         "description": "Trade confirmed break of consolidation",
-        "allowed_regimes": ["breakout_ready", "range_bound"],
-        "invalid_regimes": ["trending", "mean_reverting", "unstable_noisy"],
+        "allowed_regimes": ["breakout_ready", "range_bound", "trending"],  # Added trending - trend continuation can be breakouts
+        "invalid_regimes": ["mean_reverting", "unstable_noisy"],  # Removed trending from invalid
         "required_confluence": ["consolidation_pattern", "bollinger_squeeze", "volume_expansion"],
         "max_spread_pips": 4.0,  # Relaxed from 3.0
         "min_atr_pct": 25,
@@ -118,7 +118,7 @@ STRATEGY_TEMPLATES = {
     "VOLATILITY_EXPANSION": {
         "name": "Volatility Expansion",
         "description": "Trade initial move when volatility expands",
-        "allowed_regimes": ["high_vol_expansion", "breakout_ready"],
+        "allowed_regimes": ["high_vol_expansion", "breakout_ready", "trending"],  # Added trending - vol expands in strong trends
         "invalid_regimes": ["low_vol_drift", "unstable_noisy"],
         "required_confluence": ["atr_expanding", "clear_direction", "structure_break"],
         "max_spread_pips": 5.0,  # Relaxed from 4.0
