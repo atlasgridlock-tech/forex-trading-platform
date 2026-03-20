@@ -38,13 +38,37 @@ app = FastAPI(title="Chronicle - Trade Journal Agent", version="2.0")
 AGENT_NAME = "Chronicle"
 ORCHESTRATOR_URL = get_agent_url("orchestrator")
 
-# Configurable paths
-MT5_FILES_PATH = Path(os.getenv("MT5_FILES_PATH", "/mt5files"))
-JOURNAL_DIR = MT5_FILES_PATH / "trade_journal"
-JOURNAL_DIR.mkdir(parents=True, exist_ok=True)
+# Configurable paths - with fallback for local development
+def get_journal_paths():
+    """Get journal paths with fallback for local development."""
+    mt5_path = Path(os.getenv("MT5_FILES_PATH", "/mt5files"))
+    
+    # Check if MT5 path is writable
+    try:
+        mt5_path.mkdir(parents=True, exist_ok=True)
+        test_file = mt5_path / ".write_test"
+        test_file.touch()
+        test_file.unlink()
+        return mt5_path / "trade_journal", mt5_path / "journal_logs"
+    except (OSError, PermissionError):
+        pass
+    
+    # Fallback to local workspace directory
+    local_workspace = Path(__file__).parent.parent / "workspace" / "journal"
+    try:
+        local_workspace.mkdir(parents=True, exist_ok=True)
+        return local_workspace / "trade_journal", local_workspace / "journal_logs"
+    except (OSError, PermissionError):
+        pass
+    
+    # Last resort: temp directory
+    import tempfile
+    temp_path = Path(tempfile.gettempdir()) / "forex_journal"
+    temp_path.mkdir(parents=True, exist_ok=True)
+    return temp_path / "trade_journal", temp_path / "journal_logs"
 
-# Daily trade logs
-LOGS_DIR = MT5_FILES_PATH / "journal_logs"
+JOURNAL_DIR, LOGS_DIR = get_journal_paths()
+JOURNAL_DIR.mkdir(parents=True, exist_ok=True)
 LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -265,8 +289,9 @@ def calculate_statistics(trades_list: List[dict]) -> dict:
 @app.on_event("startup")
 async def startup():
     print(f"🚀 {AGENT_NAME} (Trade Journal Agent) v2.0 starting...")
-    print(f"   Journal directory: {JOURNAL_DIR}")
-    print(f"   Logs directory: {LOGS_DIR}")
+    print(f"   📁 Journal directory: {JOURNAL_DIR}")
+    print(f"   📁 Logs directory: {LOGS_DIR}")
+    print(f"   (Directories will be created automatically if they don't exist)")
 
 
 @app.get("/api/status")

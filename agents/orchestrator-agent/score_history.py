@@ -14,9 +14,36 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from matplotlib.ticker import MaxNLocator
 
-# Storage path
-MT5_FILES_PATH = Path(os.getenv("MT5_FILES_PATH", "/mt5files"))
-HISTORY_DIR = MT5_FILES_PATH / "score_history"
+# Storage path - with fallback for local development
+def get_history_path():
+    """Get history storage path with fallback for local development."""
+    mt5_path = Path(os.getenv("MT5_FILES_PATH", "/mt5files"))
+    
+    # Check if MT5 path is writable
+    try:
+        mt5_path.mkdir(parents=True, exist_ok=True)
+        test_file = mt5_path / ".write_test"
+        test_file.touch()
+        test_file.unlink()
+        return mt5_path / "score_history"
+    except (OSError, PermissionError):
+        pass
+    
+    # Fallback to local workspace directory
+    local_workspace = Path(__file__).parent.parent / "workspace" / "score_history"
+    try:
+        local_workspace.mkdir(parents=True, exist_ok=True)
+        return local_workspace
+    except (OSError, PermissionError):
+        pass
+    
+    # Last resort: temp directory
+    import tempfile
+    temp_path = Path(tempfile.gettempdir()) / "forex_score_history"
+    temp_path.mkdir(parents=True, exist_ok=True)
+    return temp_path
+
+HISTORY_DIR = get_history_path()
 HISTORY_DIR.mkdir(parents=True, exist_ok=True)
 
 # Chart styling
