@@ -862,6 +862,130 @@ def get_dashboard_html(
             color: var(--text-primary);
         }}
         
+        /* Score History Styles */
+        .score-history-tabs {{
+            display: flex;
+            gap: 8px;
+            margin-bottom: 12px;
+        }}
+        
+        .history-tab {{
+            padding: 8px 16px;
+            border: 1px solid var(--border);
+            background: transparent;
+            color: var(--text-secondary);
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.2s ease;
+        }}
+        
+        .history-tab:hover {{
+            border-color: var(--primary);
+            color: var(--primary);
+        }}
+        
+        .history-tab.active {{
+            background: var(--primary);
+            color: #000;
+            border-color: var(--primary);
+            font-weight: 600;
+        }}
+        
+        .score-history-container {{
+            background: var(--card);
+            border-radius: 8px;
+            padding: 12px;
+            min-height: 300px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }}
+        
+        .score-chart-img {{
+            max-width: 100%;
+            height: auto;
+            border-radius: 8px;
+        }}
+        
+        .history-stats {{
+            display: flex;
+            gap: 20px;
+            margin-top: 10px;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }}
+        
+        .history-stats span {{
+            padding: 4px 10px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 4px;
+        }}
+        
+        .no-history {{
+            text-align: center;
+            color: var(--text-secondary);
+            padding: 40px;
+        }}
+        
+        .no-history p {{
+            margin: 8px 0;
+        }}
+        
+        .no-history .hint {{
+            font-size: 12px;
+            color: var(--text-muted);
+        }}
+        
+        .loading-small {{
+            color: var(--text-secondary);
+            font-size: 14px;
+        }}
+        
+        .compare-btn {{
+            padding: 8px 16px;
+            background: linear-gradient(135deg, var(--primary) 0%, #1976d2 100%);
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            transition: all 0.2s ease;
+            margin-right: 10px;
+        }}
+        
+        .compare-btn:hover {{
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(33, 150, 243, 0.3);
+        }}
+        
+        .score-summary-table {{
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+            margin-top: 10px;
+        }}
+        
+        .score-summary-table th {{
+            background: rgba(255,255,255,0.05);
+            padding: 10px 12px;
+            text-align: left;
+            font-weight: 600;
+            color: var(--text-secondary);
+            border-bottom: 1px solid var(--border);
+        }}
+        
+        .score-summary-table td {{
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--border);
+        }}
+        
+        .score-summary-table tr:hover {{
+            background: rgba(33, 150, 243, 0.1);
+        }}
+        
         .loading {{
             text-align: center;
             padding: 40px;
@@ -889,6 +1013,7 @@ def get_dashboard_html(
             <div class="live-dot"></div>
         </div>
         <div class="header-right">
+            <button onclick="showScoreComparison()" class="compare-btn" title="Compare all symbols score history">📊 Compare Scores</button>
             <a href="/docs/how-i-work" target="_blank" class="how-btn" title="System Documentation">📖 How I Work</a>
             <div class="account-stat">
                 <div class="account-label">Balance</div>
@@ -1110,6 +1235,19 @@ def get_dashboard_html(
                     </div>
                     
                     <div class="analysis-section">
+                        <h3>📈 Score History</h3>
+                        <div class="score-history-tabs">
+                            <button class="history-tab active" onclick="loadScoreHistory('${{symbol}}', 6)">6h</button>
+                            <button class="history-tab" onclick="loadScoreHistory('${{symbol}}', 12)">12h</button>
+                            <button class="history-tab" onclick="loadScoreHistory('${{symbol}}', 24)">24h</button>
+                            <button class="history-tab" onclick="loadScoreHistory('${{symbol}}', 48)">48h</button>
+                        </div>
+                        <div id="scoreHistoryChart" class="score-history-container">
+                            <div class="loading-small">Loading score history...</div>
+                        </div>
+                    </div>
+                    
+                    <div class="analysis-section">
                         <h3>🤖 Agent Reports</h3>
                         <div class="agent-grid">
                             ${{agentHTML || '<p style="color:var(--text-muted)">No agent data available</p>'}}
@@ -1121,13 +1259,172 @@ def get_dashboard_html(
                         <p>${{data.nexus_commentary?.replace(/\\n/g, '<br>') || 'No commentary available'}}</p>
                     </div>
                 `;
+                
+                // Load initial score history (6 hours)
+                loadScoreHistory(symbol, 6);
+                
             }} catch (e) {{
                 body.innerHTML = `<div style="color:var(--danger);padding:20px">Error loading analysis: ${{e.message}}</div>`;
             }}
         }}
         
+        async function loadScoreHistory(symbol, hours) {{
+            const container = document.getElementById('scoreHistoryChart');
+            container.innerHTML = '<div class="loading-small">Loading chart...</div>';
+            
+            // Update active tab
+            document.querySelectorAll('.history-tab').forEach(tab => {{
+                tab.classList.remove('active');
+                if (tab.textContent === hours + 'h') tab.classList.add('active');
+            }});
+            
+            try {{
+                // Try to load chart image
+                const chartUrl = `/api/score-history/${{symbol}}/chart?hours=${{hours}}&breakdown=true&_t=${{Date.now()}}`;
+                
+                // First check if we have history data
+                const historyResp = await fetch(`/api/score-history/${{symbol}}?hours=${{hours}}`);
+                const historyData = await historyResp.json();
+                
+                if (historyData.readings && historyData.readings > 0) {{
+                    container.innerHTML = `
+                        <img src="${{chartUrl}}" alt="Score History" class="score-chart-img" 
+                             onerror="this.parentElement.innerHTML='<div class=\\'no-history\\'>Chart generation failed</div>'" />
+                        <div class="history-stats">
+                            <span title="Data points">${{historyData.readings}} readings</span>
+                            <span title="Latest score">Latest: ${{historyData.latest?.total || '?'}}</span>
+                        </div>
+                    `;
+                }} else {{
+                    container.innerHTML = `
+                        <div class="no-history">
+                            <p>No score history available for ${{symbol}}</p>
+                            <p class="hint">History is recorded during lifecycle scans</p>
+                        </div>
+                    `;
+                }}
+            }} catch (e) {{
+                container.innerHTML = `<div class="no-history">Error loading history: ${{e.message}}</div>`;
+            }}
+        }}
+        
         function closeModal() {{
             document.getElementById('analysisModal').classList.remove('active');
+        }}
+        
+        async function showScoreComparison() {{
+            const modal = document.getElementById('analysisModal');
+            const title = document.getElementById('modalTitle');
+            const body = document.getElementById('modalBody');
+            
+            title.textContent = '📊 Multi-Symbol Score Comparison';
+            body.innerHTML = '<div class="loading">Loading comparison chart...</div>';
+            modal.classList.add('active');
+            modalOpen = true;
+            
+            try {{
+                // First get all symbols with history
+                const summaryResp = await fetch('/api/score-history?hours=12');
+                const summaryData = await summaryResp.json();
+                
+                const symbols = Object.keys(summaryData.symbols || {{}});
+                
+                if (symbols.length === 0) {{
+                    body.innerHTML = `
+                        <div class="no-history">
+                            <p>No score history available yet</p>
+                            <p class="hint">History is recorded during lifecycle scans. Wait for a few scan cycles.</p>
+                        </div>
+                    `;
+                    return;
+                }}
+                
+                // Build symbol summary table
+                let summaryHTML = '<table class="score-summary-table"><thead><tr><th>Symbol</th><th>Latest</th><th>Avg</th><th>Max</th><th>Min</th><th>Direction</th><th>Readings</th></tr></thead><tbody>';
+                
+                for (const [symbol, data] of Object.entries(summaryData.symbols || {{}})) {{
+                    const statusColor = data.latest >= 75 ? '#22c55e' : data.latest >= 60 ? '#f59e0b' : '#666';
+                    const dirIcon = data.latest_direction === 'long' ? '↑' : data.latest_direction === 'short' ? '↓' : '→';
+                    const dirColor = data.latest_direction === 'long' ? '#22c55e' : data.latest_direction === 'short' ? '#ef4444' : '#888';
+                    
+                    summaryHTML += `
+                        <tr onclick="closeModal(); setTimeout(() => showPairAnalysis('${{symbol}}'), 100);" style="cursor:pointer">
+                            <td style="font-weight:600;color:var(--primary)">${{symbol}}</td>
+                            <td style="color:${{statusColor}};font-weight:600">${{data.latest}}</td>
+                            <td>${{data.avg}}</td>
+                            <td style="color:#22c55e">${{data.max}}</td>
+                            <td style="color:#ef4444">${{data.min}}</td>
+                            <td style="color:${{dirColor}}">${{dirIcon}} ${{data.latest_direction || 'neutral'}}</td>
+                            <td style="color:var(--text-muted)">${{data.readings}}</td>
+                        </tr>
+                    `;
+                }}
+                summaryHTML += '</tbody></table>';
+                
+                // Build time range tabs
+                const timeRanges = [6, 12, 24, 48];
+                let tabsHTML = '<div class="score-history-tabs">';
+                timeRanges.forEach((h, i) => {{
+                    tabsHTML += `<button class="history-tab ${{i === 1 ? 'active' : ''}}" onclick="loadComparisonChart(${{h}})">${{h}}h</button>`;
+                }});
+                tabsHTML += '</div>';
+                
+                body.innerHTML = `
+                    <div class="analysis-section">
+                        <h3>📋 Score Summary (Last 12h)</h3>
+                        ${{summaryHTML}}
+                        <p style="font-size:11px;color:var(--text-muted);margin-top:8px">Click any row to see detailed history</p>
+                    </div>
+                    
+                    <div class="analysis-section">
+                        <h3>📈 Comparison Chart</h3>
+                        ${{tabsHTML}}
+                        <div id="comparisonChart" class="score-history-container" style="min-height:350px">
+                            <div class="loading-small">Loading chart...</div>
+                        </div>
+                    </div>
+                `;
+                
+                // Load initial comparison chart (12 hours)
+                loadComparisonChart(12);
+                
+            }} catch (e) {{
+                body.innerHTML = `<div style="color:var(--danger);padding:20px">Error: ${{e.message}}</div>`;
+            }}
+        }}
+        
+        async function loadComparisonChart(hours) {{
+            const container = document.getElementById('comparisonChart');
+            if (!container) return;
+            
+            container.innerHTML = '<div class="loading-small">Loading chart...</div>';
+            
+            // Update active tab
+            document.querySelectorAll('.history-tab').forEach(tab => {{
+                tab.classList.remove('active');
+                if (tab.textContent === hours + 'h') tab.classList.add('active');
+            }});
+            
+            try {{
+                // Get all symbols
+                const summaryResp = await fetch('/api/score-history?hours=' + hours);
+                const summaryData = await summaryResp.json();
+                const symbols = Object.keys(summaryData.symbols || {{}}).slice(0, 8).join(',');
+                
+                if (!symbols) {{
+                    container.innerHTML = '<div class="no-history">No data available</div>';
+                    return;
+                }}
+                
+                const chartUrl = `/api/score-history/compare/chart?symbols=${{symbols}}&hours=${{hours}}&_t=${{Date.now()}}`;
+                
+                container.innerHTML = `
+                    <img src="${{chartUrl}}" alt="Comparison Chart" class="score-chart-img" 
+                         onerror="this.parentElement.innerHTML='<div class=\\'no-history\\'>Chart generation failed</div>'" />
+                `;
+            }} catch (e) {{
+                container.innerHTML = `<div class="no-history">Error: ${{e.message}}</div>`;
+            }}
         }}
         
         // Close modal on Escape key
