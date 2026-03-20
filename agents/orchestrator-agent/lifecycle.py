@@ -858,40 +858,42 @@ class LifecycleManager:
             
             self.active_trades[trade.trade_id] = trade
             
-            # Log to Chronicle with full details including confluence and thesis
-            await self.post_agent("chronicle", "/api/trade/execute/" + setup.setup_id, {
-                # Execution details
-                "fill_price": trade.entry_price_actual,
-                "slippage_pips": trade.slippage_pips,
-                "ticket": trade.broker_ticket,
-                
-                # Trade setup details
+            # Log to Chronicle v2.0 with full context for chart generation and journaling
+            await self.post_agent("chronicle", "/api/trade/execute", {
+                "trade_id": trade.trade_id,
                 "symbol": setup.symbol,
                 "direction": setup.direction,
+                "entry_price": trade.entry_price_actual,
                 "stop_loss": setup.stop_loss,
-                "take_profit": setup.take_profit_1,
+                "take_profit": setup.take_profit_1 or 0,
                 "lot_size": decision.get("position_size", 0.01),
                 
-                # Confluence scores at entry (key for journaling!)
-                "confluence_at_entry": {
-                    "total": decision.get("confluence_score", 0),
-                    "breakdown": decision.get("score_breakdown", {}),
-                },
+                # Strategy context
+                "strategy": setup.template,
+                "strategy_score": setup.confidence or 0,
                 
-                # Trade thesis from Tactician
+                # Confluence at entry
+                "confluence_score": decision.get("confluence_score", 0),
+                "confluence_breakdown": decision.get("score_breakdown", {}),
+                
+                # Trade thesis (why we took this trade)
                 "thesis": {
-                    "strategy": setup.template,
-                    "why_here": setup.why_here,
-                    "why_now": setup.why_now,
-                    "why_direction": setup.why_direction,
-                    "invalidation": setup.invalidation,
-                    "confidence": setup.confidence,
+                    "why_here": setup.why_here or "",
+                    "why_now": setup.why_now or "",
+                    "why_direction": setup.why_direction or "",
+                    "invalidation": setup.invalidation or "",
                 },
                 
-                # Entry reasoning
-                "entry_trigger": setup.entry_trigger,
+                # Agent verdicts at entry
+                "agent_verdicts": decision.get("agent_verdicts", {}),
+                
+                # Execution details
+                "broker_ticket": int(trade.broker_ticket) if trade.broker_ticket else 0,
                 "entry_type": getattr(setup, 'entry_type', 'market'),
+                "timeframe": "H1",
             })
+            
+            print(f"[Lifecycle] Trade journaled to Chronicle: {trade.trade_id}")
             
             self.log_stage(LifecycleStage.ORDER_ROUTING, setup.symbol, {
                 "trade_id": trade.trade_id,

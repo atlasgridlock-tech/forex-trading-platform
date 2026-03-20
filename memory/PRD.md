@@ -95,10 +95,20 @@ Build and debug a complex 15-agent forex trading platform, making the system ful
 - ✅ Added minimum stop distance enforcement: 8 pips (majors), 10 pips (JPY pairs)
 - Root cause: When ATR data was missing, fallback of 0.001 caused sub-pip stops
 
+**Chronicle v2.0 - Trade Journal Revamp:**
+- ✅ Complete rewrite of `/app/agents/journal-agent/app.py`
+- ✅ New chart generator: `/app/agents/journal-agent/chart_generator.py`
+- ✅ Generates candlestick charts (mplfinance) with entry/SL/TP markers
+- ✅ Creates confluence summary infographics
+- ✅ Saves trade metadata, thesis, and agent verdicts as JSON
+- ✅ Journal folder structure: `/mt5files/trade_journal/{timestamp}_{symbol}_{direction}/`
+- ✅ Updated lifecycle.py to call new Chronicle API on trade execution
+
 **Status:**
 - System is working end-to-end: pairs being added to watchlist (60-74 score)
 - Regime restrictions loosened - many more strategies now qualify
 - Stop distance issues fixed - realistic stops will now be generated
+- Chronicle v2.0 ready to capture trades with charts and full context
 - Waiting for confluence ≥75 to verify trade execution
 
 ## Pending/Backlog
@@ -112,6 +122,9 @@ Build and debug a complex 15-agent forex trading platform, making the system ful
 - `/app/agents/orchestrator-agent/app.py` - Dashboard, confluence API
 - `/app/agents/data-agent/app.py` - Market data, spread calculation
 - `/app/agents/strategy-agent/app.py` - Strategy qualification, templates
+- `/app/agents/journal-agent/app.py` - Chronicle v2.0 trade journaling
+- `/app/agents/journal-agent/chart_generator.py` - Trade chart generation (mplfinance)
+- `/app/agents/risk-agent/app.py` - Guardian risk management
 - `/app/agents/macro-agent/app.py` - Oracle agent, dynamic narratives
 - `/app/agents/sentiment-agent/app.py` - Pulse agent, rate limiting fix
 - `/app/agents/shared/utils.py` - Claude helper function
