@@ -361,8 +361,10 @@ async def evaluate_trade(request: TradeRequest) -> dict:
             stop_pips = abs(request.stop - request.entry) * 100
     
     # 3. Validate stop distance
-    if stop_pips < 5:
-        checks.append({"check": "stop_distance", "passed": False, "message": f"Stop too tight ({stop_pips:.1f} pips)"})
+    # Minimum 3 pips for majors (tight scalping), 2 pips absolute minimum
+    min_stop_pips = 2.0 if "JPY" not in request.symbol else 2.0
+    if stop_pips < min_stop_pips:
+        checks.append({"check": "stop_distance", "passed": False, "message": f"Stop too tight ({stop_pips:.1f} pips < {min_stop_pips})"})
     elif stop_pips > 100:
         checks.append({"check": "stop_distance", "passed": False, "message": f"Stop too wide ({stop_pips:.1f} pips)"})
     else:

@@ -87,9 +87,13 @@ Build and debug a complex 15-agent forex trading platform, making the system ful
 - ✅ BREAKOUT: Added `trending` to allowed, removed from invalid
 - ✅ VOLATILITY_EXPANSION: Added `trending` to allowed (vol expands in strong trends)
 
+**Guardian Risk Agent Updates:**
+- ✅ Lowered minimum stop distance from 5 pips to 2 pips (allows tighter scalping entries)
+
 **Status:**
 - System is working end-to-end: pairs being added to watchlist (60-74 score)
-- Regime restrictions loosened - more strategies will now qualify
+- Regime restrictions loosened - many more strategies now qualify
+- Stop distance restriction loosened - tight technical entries now allowed
 - Waiting for confluence ≥75 to verify trade execution
 
 ## Pending/Backlog
