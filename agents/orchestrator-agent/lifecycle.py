@@ -201,22 +201,35 @@ class LifecycleManager:
                 r = await client.get(f"{url}{endpoint}", timeout=timeout)
                 if r.status_code == 200:
                     return r.json()
-        except:
-            pass
+                else:
+                    print(f"[Lifecycle] ⚠️ GET {agent}{endpoint} returned {r.status_code}")
+        except httpx.TimeoutException:
+            print(f"[Lifecycle] ⚠️ Timeout fetching {agent}{endpoint}")
+        except Exception as e:
+            print(f"[Lifecycle] ⚠️ Error fetching {agent}{endpoint}: {e}")
         return None
     
     async def post_agent(self, agent: str, endpoint: str, data: dict, timeout: float = 10.0) -> Optional[dict]:
         """Post data to an agent."""
         url = self.agent_urls.get(agent)
         if not url:
+            print(f"[Lifecycle] ❌ Agent '{agent}' URL not found")
             return None
         try:
             async with httpx.AsyncClient() as client:
                 r = await client.post(f"{url}{endpoint}", json=data, timeout=timeout)
+                response_data = r.json()
                 if r.status_code == 200:
-                    return r.json()
-        except:
-            pass
+                    return response_data
+                else:
+                    print(f"[Lifecycle] ⚠️ {agent}{endpoint} returned status {r.status_code}: {response_data}")
+                    return response_data  # Return response even if not 200 so caller can see rejection reason
+        except httpx.TimeoutException:
+            print(f"[Lifecycle] ❌ TIMEOUT calling {agent}{endpoint} (>{timeout}s)")
+            return {"error": "timeout", "agent": agent, "endpoint": endpoint}
+        except Exception as e:
+            print(f"[Lifecycle] ❌ Error calling {agent}{endpoint}: {type(e).__name__}: {e}")
+            return {"error": str(e), "agent": agent, "endpoint": endpoint}
         return None
     
     def log_stage(self, stage: LifecycleStage, symbol: str, data: dict):
@@ -864,14 +877,21 @@ class LifecycleManager:
             return None
         
         # Execute market order via Executor
-        result = await self.post_agent("executor", "/api/execute", {
+        execution_payload = {
             "symbol": setup.symbol,
             "direction": setup.direction,  # "long" or "short"
             "entry_price": setup.entry_price,
             "stop_loss": setup.stop_loss,
             "take_profit": setup.take_profit_1,
             "lot_size": decision.get("position_size", 0.01),
-        })
+        }
+        print(f"[Lifecycle] 🚀 EXECUTING TRADE: {setup.symbol} {setup.direction.upper()}")
+        print(f"[Lifecycle]    Payload: {execution_payload}")
+        
+        result = await self.post_agent("executor", "/api/execute", execution_payload)
+        
+        # Log the full response for debugging
+        print(f"[Lifecycle]    Executor Response: {result}")
         
         if result and result.get("status") in ["EXECUTED", "filled"]:
             trade = ActiveTrade(
@@ -941,6 +961,30 @@ class LifecycleManager:
             })
             
             return trade
+        
+        # EXECUTION FAILED - Log why!
+        error_reason = "No response from Executor"
+        if result:
+            error_reason = result.get("reason") or result.get("error") or f"Status: {result.get('status', 'unknown')}"
+        
+        print(f"[Lifecycle] ❌ EXECUTION FAILED for {setup.symbol}: {error_reason}")
+        print(f"[Lifecycle]    Full response: {result}")
+        
+        # Record the failed execution attempt in score history
+        self._record_score_history(
+            symbol=setup.symbol,
+            score=decision.get("confluence_score", 0),
+            breakdown=decision.get("score_breakdown", {}),
+            direction=setup.direction,
+            strategy=setup.template,
+            decision="exec_failed",  # Mark as execution failed, not just approved
+        )
+        
+        self.log_stage(LifecycleStage.ORDER_ROUTING, setup.symbol, {
+            "status": "FAILED",
+            "reason": error_reason,
+            "executor_response": result,
+        })
         
         return None
     

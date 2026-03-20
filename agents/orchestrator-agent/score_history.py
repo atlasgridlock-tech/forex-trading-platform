@@ -286,6 +286,12 @@ def generate_score_history_chart(
         for i, (ts, score, dec) in enumerate(zip(timestamps, totals, decisions)):
             if dec == "execute":
                 ax.scatter([ts], [score], color='#26a69a', s=100, zorder=5, marker='^')
+            elif dec == "executed":
+                # Successfully executed - green circle
+                ax.scatter([ts], [score], color='#00ff00', s=120, zorder=6, marker='o', edgecolors='white', linewidths=1.5)
+            elif dec == "exec_failed":
+                # Execution failed - red X
+                ax.scatter([ts], [score], color='#ff0000', s=150, zorder=6, marker='X', edgecolors='white', linewidths=1.5)
             elif dec == "watchlist":
                 ax.scatter([ts], [score], color='#f59e0b', s=60, zorder=5, marker='s')
         
@@ -314,8 +320,17 @@ def generate_score_history_chart(
         # Tick colors
         ax.tick_params(colors=CHART_COLORS["text"])
         
-        # Legend
-        ax.legend(loc='upper left', fontsize=8,
+        # Legend - add custom markers for execution status
+        from matplotlib.lines import Line2D
+        legend_elements = [
+            Line2D([0], [0], color=CHART_COLORS["total"], linewidth=2.5, label='Total Confluence'),
+            Line2D([0], [0], color=CHART_COLORS["threshold_75"], linewidth=1.5, label='Execute (75)'),
+            Line2D([0], [0], color=CHART_COLORS["threshold_60"], linestyle='--', linewidth=1, label='Watchlist (60)'),
+            Line2D([0], [0], marker='o', color='w', markerfacecolor='#00ff00', markersize=10, label='Trade Executed', linestyle='None'),
+            Line2D([0], [0], marker='X', color='w', markerfacecolor='#ff0000', markersize=10, label='Exec FAILED', linestyle='None'),
+            Line2D([0], [0], marker='^', color='w', markerfacecolor='#26a69a', markersize=8, label='Execute Signal', linestyle='None'),
+        ]
+        ax.legend(handles=legend_elements, loc='upper left', fontsize=8,
                  facecolor=CHART_COLORS["background"],
                  edgecolor=CHART_COLORS["grid"],
                  labelcolor=CHART_COLORS["text"])

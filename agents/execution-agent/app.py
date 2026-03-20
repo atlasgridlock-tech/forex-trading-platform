@@ -643,8 +643,11 @@ async def execute_order(order: OrderRequest) -> dict:
     # CRITICAL SAFETY CHECKS - NO OVERRIDE POSSIBLE
     # ═══════════════════════════════════════════════════════════
     
+    print(f"[Executor] Safety checks for {order.symbol}...")
+    
     # 1. MANDATORY STOP LOSS
     if order.stop_loss is None or order.stop_loss == 0:
+        print(f"[Executor] ❌ REJECTED: No stop loss")
         return {
             "status": "REJECTED",
             "reason": "NO NAKED TRADES - Stop loss is MANDATORY",
@@ -653,6 +656,7 @@ async def execute_order(order: OrderRequest) -> dict:
     
     # 2. NO DUPLICATE SIGNALS
     if is_duplicate_signal(order):
+        print(f"[Executor] ❌ REJECTED: Duplicate signal")
         return {
             "status": "REJECTED",
             "reason": "Duplicate signal detected - already processed",
@@ -661,6 +665,7 @@ async def execute_order(order: OrderRequest) -> dict:
     
     # 3. NO MARTINGALE
     if is_martingale(order):
+        print(f"[Executor] ❌ REJECTED: Martingale detected")
         return {
             "status": "REJECTED",
             "reason": "MARTINGALE DETECTED - Cannot increase size after loss",
@@ -669,6 +674,7 @@ async def execute_order(order: OrderRequest) -> dict:
     
     # 4. NO AVERAGING DOWN
     if is_averaging_down(order):
+        print(f"[Executor] ❌ REJECTED: Averaging down detected")
         return {
             "status": "REJECTED",
             "reason": "AVERAGING DOWN DETECTED - Cannot add to losing position",
@@ -683,6 +689,7 @@ async def execute_order(order: OrderRequest) -> dict:
             order_symbol = order.symbol.replace(".s", "").replace(".S", "")
             if pos_symbol == order_symbol:
                 # Already have a position in this symbol
+                print(f"[Executor] ❌ REJECTED: Duplicate position in {pos_symbol}")
                 return {
                     "status": "REJECTED",
                     "reason": f"DUPLICATE POSITION - Already have {pos.get('direction')} position in {pos_symbol} (ticket: {pos.get('ticket')})",
@@ -692,6 +699,7 @@ async def execute_order(order: OrderRequest) -> dict:
     # 5. RATE LIMITS
     rate_ok, rate_msg = check_rate_limits(order.symbol)
     if not rate_ok:
+        print(f"[Executor] ❌ REJECTED: Rate limit - {rate_msg}")
         return {
             "status": "REJECTED",
             "reason": rate_msg,
@@ -699,25 +707,33 @@ async def execute_order(order: OrderRequest) -> dict:
         }
     
     # 6. GUARDIAN APPROVAL
+    print(f"[Executor] Checking Guardian approval...")
     guardian_approved, guardian_result = await check_guardian_approval(order)
     if not guardian_approved:
+        print(f"[Executor] ❌ REJECTED: Guardian denied - {guardian_result}")
         return {
             "status": "REJECTED",
             "reason": f"Guardian denied: {guardian_result.get('reason', 'Unknown')}",
             "guardian_result": guardian_result,
             "health_score": 0,
         }
+    print(f"[Executor] ✅ Guardian approved")
     
     # ═══════════════════════════════════════════════════════════
     # EXECUTION BY MODE
     # ═══════════════════════════════════════════════════════════
     
+    print(f"[Executor] All safety checks passed! Executing in {execution_mode.value} mode...")
+    
     if execution_mode == ExecutionMode.PAPER:
         receipt = execute_paper_order(order)
+        print(f"[Executor] ✅ Paper order executed: {receipt.get('order_id')}")
     elif execution_mode == ExecutionMode.SHADOW_LIVE:
         receipt = execute_shadow_order(order)
+        print(f"[Executor] 📝 Shadow order logged: {receipt.get('order_id')}")
     elif execution_mode == ExecutionMode.GUARDED_LIVE:
         receipt = execute_live_order(order)
+        print(f"[Executor] 🔴 Live order result: {receipt.get('status')} - {receipt.get('order_id')}")
     else:
         return {"status": "ERROR", "reason": f"Unknown mode: {execution_mode}"}
     
@@ -985,7 +1001,10 @@ async def chat(request: ChatRequest):
 @app.post("/api/execute")
 async def execute(order: OrderRequest):
     """Execute a trade order."""
-    return await execute_order(order)
+    print(f"[Executor] 📥 Received order: {order.symbol} {order.direction} lot={order.lot_size} SL={order.stop_loss}")
+    result = await execute_order(order)
+    print(f"[Executor] 📤 Result: {result.get('status')} - {result.get('reason', result.get('order_id', 'OK'))}")
+    return result
 
 
 @app.get("/api/receipts")
