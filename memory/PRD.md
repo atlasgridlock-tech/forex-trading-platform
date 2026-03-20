@@ -90,10 +90,15 @@ Build and debug a complex 15-agent forex trading platform, making the system ful
 **Guardian Risk Agent Updates:**
 - ✅ Lowered minimum stop distance from 5 pips to 2 pips (allows tighter scalping entries)
 
+**Strategy Agent Stop Calculation Fixes:**
+- ✅ Increased default ATR from 0.001 to 0.01 (~10 pips) - prevents tiny stop calculations
+- ✅ Added minimum stop distance enforcement: 8 pips (majors), 10 pips (JPY pairs)
+- Root cause: When ATR data was missing, fallback of 0.001 caused sub-pip stops
+
 **Status:**
 - System is working end-to-end: pairs being added to watchlist (60-74 score)
 - Regime restrictions loosened - many more strategies now qualify
-- Stop distance restriction loosened - tight technical entries now allowed
+- Stop distance issues fixed - realistic stops will now be generated
 - Waiting for confluence ≥75 to verify trade execution
 
 ## Pending/Backlog

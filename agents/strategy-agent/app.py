@@ -633,6 +633,22 @@ def calculate_entry_parameters(strategy_name: str, direction: str, price: float,
     # Determine pip multiplier (JPY pairs use 100, others use 10000)
     pip_mult = 100 if price > 50 else 10000
     
+    # ═══ ENFORCE MINIMUM STOP DISTANCE ═══
+    # Minimum 8 pips for majors, 10 pips for JPY pairs - prevents unrealistic tight stops
+    min_stop_pips = 10 if pip_mult == 100 else 8
+    min_stop_distance = min_stop_pips / pip_mult
+    
+    current_stop_distance = abs(entry - stop)
+    if current_stop_distance < min_stop_distance:
+        # Expand stop to minimum distance
+        if is_long:
+            stop = entry - min_stop_distance
+        else:
+            stop = entry + min_stop_distance
+        # Recalculate risk metrics
+        risk = min_stop_distance
+        rr_ratio = reward1 / risk if risk > 0 else 0
+    
     return {
         "direction": "LONG" if is_long else "SHORT",
         "entry": round(entry, 5 if pip_mult == 10000 else 3),
@@ -680,7 +696,8 @@ async def evaluate_strategies(symbol: str) -> dict:
     price = symbol_market.get("price", 1.0)
     curator_spread = (curator_data.get("spread_pips") or 1.0) if curator_data else 1.0
     spread = symbol_market.get("spread") or curator_spread
-    atr = (curator_data.get("atr") or 0.001) if curator_data else 0.001
+    # Default ATR: 0.01 (~10 pips for majors, ~100 pips for JPY pairs) - much safer than 0.001
+    atr = (curator_data.get("atr") or 0.01) if curator_data else 0.01
     session = (curator_data.get("session") or "London") if curator_data else "London"
     
     # Estimate ATR percentage (vs typical)
