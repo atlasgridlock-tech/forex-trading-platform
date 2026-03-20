@@ -731,6 +731,24 @@ class LifecycleManager:
         # Fallback: return 0 if we can't get the score
         return 0, {}
     
+    def _record_score_history(self, symbol: str, score: int, breakdown: dict, 
+                               direction: str, strategy: str, decision: str):
+        """Record confluence score to history tracker."""
+        try:
+            from score_history import get_tracker
+            tracker = get_tracker()
+            tracker.record_score(
+                symbol=symbol,
+                total_score=score,
+                breakdown=breakdown,
+                direction=direction,
+                strategy=strategy,
+                decision=decision,
+            )
+        except Exception as e:
+            # Don't let history tracking break the main flow
+            print(f"[Lifecycle] Score history error (non-fatal): {e}")
+    
     async def stage_trade_decision(self, setup: TradeSetup, risk: dict, portfolio: dict, execution: dict, analysis: dict = None) -> Tuple[str, dict]:
         """Make final trade decision based on CONFLUENCE SCORE (not Tactician's score)."""
         decision = "NO_TRADE"
@@ -784,6 +802,17 @@ class LifecycleManager:
             "position_size": risk.get("position_size", 0),
             "risk_pct": risk.get("risk_pct", 0),
         }
+        
+        # Record score to history tracker for visualization
+        decision_type = "execute" if decision in ["BUY", "SELL"] else "watchlist" if decision == "WATCHLIST" else "blocked"
+        self._record_score_history(
+            symbol=setup.symbol,
+            score=confluence_score,
+            breakdown=score_breakdown,
+            direction=setup.direction,
+            strategy=setup.template,
+            decision=decision_type,
+        )
         
         # Add to watchlist if decision is WATCHLIST
         if decision == "WATCHLIST" and self.watchlist_callback:

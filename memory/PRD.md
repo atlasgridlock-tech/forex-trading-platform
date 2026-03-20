@@ -104,11 +104,24 @@ Build and debug a complex 15-agent forex trading platform, making the system ful
 - ✅ Journal folder structure: `/mt5files/trade_journal/{timestamp}_{symbol}_{direction}/`
 - ✅ Updated lifecycle.py to call new Chronicle API on trade execution
 
+**Score History Tracking:**
+- ✅ New module: `/app/agents/orchestrator-agent/score_history.py`
+- ✅ Records confluence scores over time during lifecycle scans
+- ✅ Generates line charts showing score evolution with thresholds
+- ✅ Multi-symbol comparison charts
+- ✅ New API endpoints:
+  - `GET /api/score-history/{symbol}` - Get score history JSON
+  - `GET /api/score-history/{symbol}/chart` - Get score evolution chart (PNG)
+  - `GET /api/score-history` - Summary of all symbols
+  - `GET /api/score-history/compare/chart?symbols=USDJPY,GBPUSD` - Multi-symbol comparison
+- ✅ Stores history in `/mt5files/score_history/`
+
 **Status:**
 - System is working end-to-end: pairs being added to watchlist (60-74 score)
 - Regime restrictions loosened - many more strategies now qualify
 - Stop distance issues fixed - realistic stops will now be generated
 - Chronicle v2.0 ready to capture trades with charts and full context
+- Score history tracking active - can visualize confluence evolution
 - Waiting for confluence ≥75 to verify trade execution
 
 ## Pending/Backlog
@@ -120,6 +133,7 @@ Build and debug a complex 15-agent forex trading platform, making the system ful
 ## Key Files
 - `/app/agents/orchestrator-agent/lifecycle.py` - Core trade lifecycle logic
 - `/app/agents/orchestrator-agent/app.py` - Dashboard, confluence API
+- `/app/agents/orchestrator-agent/score_history.py` - Confluence score history tracker
 - `/app/agents/data-agent/app.py` - Market data, spread calculation
 - `/app/agents/strategy-agent/app.py` - Strategy qualification, templates
 - `/app/agents/journal-agent/app.py` - Chronicle v2.0 trade journaling

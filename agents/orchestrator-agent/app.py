@@ -1627,6 +1627,130 @@ async def get_watchlist():
     }
 
 
+# ═══════════════════════════════════════════════════════════════
+# SCORE HISTORY ENDPOINTS
+# ═══════════════════════════════════════════════════════════════
+
+@app.get("/api/score-history/{symbol}")
+async def get_score_history(symbol: str, hours: int = 24):
+    """
+    Get confluence score history for a symbol.
+    Shows how the score evolved over time.
+    """
+    try:
+        from score_history import get_tracker
+        tracker = get_tracker()
+        history = tracker.get_history(symbol, hours)
+        
+        return {
+            "symbol": symbol,
+            "hours": hours,
+            "readings": len(history),
+            "history": history,
+            "latest": history[-1] if history else None,
+        }
+    except Exception as e:
+        return {"error": str(e), "symbol": symbol, "history": []}
+
+
+@app.get("/api/score-history/{symbol}/chart")
+async def get_score_history_chart(symbol: str, hours: int = 24, breakdown: bool = True):
+    """
+    Get a PNG chart showing confluence score evolution over time.
+    """
+    from fastapi.responses import Response
+    
+    try:
+        from score_history import get_tracker, generate_score_history_chart
+        tracker = get_tracker()
+        history = tracker.get_history(symbol, hours)
+        
+        if not history:
+            return {"error": "No score history available for this symbol"}
+        
+        chart_bytes = generate_score_history_chart(
+            history=history,
+            symbol=symbol,
+            show_breakdown=breakdown,
+        )
+        
+        if chart_bytes:
+            return Response(content=chart_bytes, media_type="image/png")
+        else:
+            return {"error": "Failed to generate chart"}
+            
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/api/score-history")
+async def get_all_score_history(hours: int = 12):
+    """
+    Get score history summary for all symbols.
+    """
+    try:
+        from score_history import get_tracker
+        tracker = get_tracker()
+        
+        symbols = tracker.get_all_symbols()
+        summary = {}
+        
+        for symbol in symbols:
+            history = tracker.get_history(symbol, hours)
+            if history:
+                scores = [h.get("total", 0) for h in history]
+                summary[symbol] = {
+                    "readings": len(history),
+                    "latest": history[-1].get("total", 0),
+                    "avg": round(sum(scores) / len(scores), 1),
+                    "max": max(scores),
+                    "min": min(scores),
+                    "latest_decision": history[-1].get("decision", ""),
+                    "latest_direction": history[-1].get("direction", ""),
+                }
+        
+        return {
+            "symbols": summary,
+            "hours": hours,
+            "total_symbols": len(summary),
+        }
+    except Exception as e:
+        return {"error": str(e), "symbols": {}}
+
+
+@app.get("/api/score-history/compare/chart")
+async def get_multi_symbol_chart(symbols: str = "USDJPY,GBPUSD,AUDNZD", hours: int = 12):
+    """
+    Get a PNG chart comparing confluence scores across multiple symbols.
+    
+    Args:
+        symbols: Comma-separated list of symbols
+        hours: How many hours of history to show
+    """
+    from fastapi.responses import Response
+    
+    try:
+        from score_history import get_tracker, generate_multi_symbol_chart
+        tracker = get_tracker()
+        symbol_list = [s.strip() for s in symbols.split(",")]
+        
+        chart_bytes = generate_multi_symbol_chart(
+            tracker=tracker,
+            symbols=symbol_list,
+            hours=hours,
+        )
+        
+        if chart_bytes:
+            return Response(content=chart_bytes, media_type="image/png")
+        else:
+            return {"error": "Failed to generate chart or no data available"}
+            
+    except Exception as e:
+        return {"error": str(e)}
+
+
+
+
 @app.get("/api/agents")
 async def get_agents():
     """Get status of all agents."""
