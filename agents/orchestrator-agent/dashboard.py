@@ -187,6 +187,8 @@ def get_dashboard_html(
     <!-- No auto-refresh - using JavaScript for partial updates -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
     <style>
         * {{ margin: 0; padding: 0; box-sizing: border-box; }}
         
@@ -938,6 +940,33 @@ def get_dashboard_html(
             color: var(--text-muted);
         }}
         
+        .chart-legend {{
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            justify-content: center;
+            margin-top: 10px;
+            padding: 8px;
+            background: rgba(255,255,255,0.03);
+            border-radius: 6px;
+            font-size: 11px;
+        }}
+        
+        .legend-item {{
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            color: var(--text-secondary);
+        }}
+        
+        .legend-dot {{
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            border: 1px solid rgba(255,255,255,0.3);
+        }}
+        }}
+        
         .loading-small {{
             color: var(--text-secondary);
             font-size: 14px;
@@ -1268,6 +1297,9 @@ def get_dashboard_html(
             }}
         }}
         
+        // Store chart instance globally for cleanup
+        let scoreHistoryChartInstance = null;
+        
         async function loadScoreHistory(symbol, hours) {{
             const container = document.getElementById('scoreHistoryChart');
             container.innerHTML = '<div class="loading-small">Loading chart...</div>';
@@ -1279,22 +1311,237 @@ def get_dashboard_html(
             }});
             
             try {{
-                // Try to load chart image
-                const chartUrl = `/api/score-history/${{symbol}}/chart?hours=${{hours}}&breakdown=true&_t=${{Date.now()}}`;
-                
-                // First check if we have history data
+                // Fetch history data
                 const historyResp = await fetch(`/api/score-history/${{symbol}}?hours=${{hours}}`);
                 const historyData = await historyResp.json();
                 
-                if (historyData.readings && historyData.readings > 0) {{
+                if (historyData.history && historyData.history.length > 0) {{
+                    // Destroy previous chart if exists
+                    if (scoreHistoryChartInstance) {{
+                        scoreHistoryChartInstance.destroy();
+                        scoreHistoryChartInstance = null;
+                    }}
+                    
+                    // Create canvas for Chart.js
                     container.innerHTML = `
-                        <img src="${{chartUrl}}" alt="Score History" class="score-chart-img" 
-                             onerror="this.parentElement.innerHTML='<div class=\\'no-history\\'>Chart generation failed</div>'" />
+                        <canvas id="scoreCanvas" style="width:100%;height:300px;"></canvas>
+                        <div class="chart-legend">
+                            <div class="legend-item"><span class="legend-dot" style="background:#00ff00"></span>Executed</div>
+                            <div class="legend-item"><span class="legend-dot" style="background:#ff0000"></span>Exec Failed</div>
+                            <div class="legend-item"><span class="legend-dot" style="background:#ff6600"></span>Blocked (high)</div>
+                            <div class="legend-item"><span class="legend-dot" style="background:#26a69a"></span>Execute Signal</div>
+                            <div class="legend-item"><span class="legend-dot" style="background:#f59e0b"></span>Watchlist</div>
+                            <div class="legend-item"><span class="legend-dot" style="background:#2196f3"></span>Regular</div>
+                        </div>
                         <div class="history-stats">
                             <span title="Data points">${{historyData.readings}} readings</span>
                             <span title="Latest score">Latest: ${{historyData.latest?.total || '?'}}</span>
+                            <span title="Direction">Direction: ${{historyData.latest?.direction === 'long' ? '📈 Long' : historyData.latest?.direction === 'short' ? '📉 Short' : '—'}}</span>
                         </div>
                     `;
+                    
+                    const ctx = document.getElementById('scoreCanvas').getContext('2d');
+                    
+                    // Prepare data
+                    const dataPoints = historyData.history.map(h => ({{
+                        x: new Date(h.timestamp),
+                        y: h.total,
+                        direction: h.direction,
+                        decision: h.decision,
+                        strategy: h.strategy,
+                        breakdown: h.breakdown
+                    }}));
+                    
+                    // Create chart
+                    scoreHistoryChartInstance = new Chart(ctx, {{
+                        type: 'line',
+                        data: {{
+                            datasets: [
+                                {{
+                                    label: 'Confluence Score',
+                                    data: dataPoints,
+                                    borderColor: '#2196f3',
+                                    backgroundColor: 'rgba(33, 150, 243, 0.1)',
+                                    borderWidth: 2,
+                                    fill: true,
+                                    tension: 0.1,
+                                    pointRadius: 4,
+                                    pointHoverRadius: 8,
+                                    pointBackgroundColor: (ctx) => {{
+                                        const point = ctx.raw;
+                                        if (!point) return '#2196f3';
+                                        if (point.decision === 'executed') return '#00ff00';
+                                        if (point.decision === 'exec_failed') return '#ff0000';
+                                        if (point.decision === 'blocked_high_score') return '#ff6600';
+                                        if (point.decision === 'execute') return '#26a69a';
+                                        if (point.decision === 'watchlist') return '#f59e0b';
+                                        return '#2196f3';
+                                    }},
+                                    pointBorderColor: '#fff',
+                                    pointBorderWidth: 1,
+                                }}
+                            ]
+                        }},
+                        options: {{
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            interaction: {{
+                                mode: 'nearest',
+                                intersect: false
+                            }},
+                            plugins: {{
+                                legend: {{
+                                    display: false
+                                }},
+                                tooltip: {{
+                                    backgroundColor: 'rgba(20, 20, 30, 0.95)',
+                                    titleColor: '#fff',
+                                    bodyColor: '#ccc',
+                                    borderColor: '#444',
+                                    borderWidth: 1,
+                                    padding: 12,
+                                    displayColors: false,
+                                    callbacks: {{
+                                        title: function(tooltipItems) {{
+                                            const date = new Date(tooltipItems[0].raw.x);
+                                            return date.toLocaleString();
+                                        }},
+                                        label: function(context) {{
+                                            const point = context.raw;
+                                            const lines = [];
+                                            
+                                            // Score with colored indicator
+                                            lines.push(`Score: ${{point.y}}/100`);
+                                            
+                                            // Direction (BUY/SELL) - THE KEY FEATURE!
+                                            const dirLabel = point.direction === 'long' ? '📈 LONG (Buy)' : 
+                                                            point.direction === 'short' ? '📉 SHORT (Sell)' : 
+                                                            '➡️ Neutral';
+                                            lines.push(dirLabel);
+                                            
+                                            // Decision status
+                                            const decisionLabels = {{
+                                                'executed': '✅ EXECUTED',
+                                                'exec_failed': '❌ EXEC FAILED',
+                                                'blocked_high_score': '⚠️ BLOCKED (high score)',
+                                                'execute': '🎯 Execute Signal',
+                                                'watchlist': '👀 Watchlist',
+                                                'blocked': '🚫 Blocked',
+                                                'no_setup': '— No Setup'
+                                            }};
+                                            lines.push(decisionLabels[point.decision] || point.decision);
+                                            
+                                            // Strategy if available
+                                            if (point.strategy && point.strategy !== 'none_qualified') {{
+                                                lines.push(`Strategy: ${{point.strategy}}`);
+                                            }}
+                                            
+                                            // Breakdown scores
+                                            if (point.breakdown) {{
+                                                lines.push('---');
+                                                if (point.breakdown.technical) lines.push(`Technical: ${{point.breakdown.technical}}`);
+                                                if (point.breakdown.structure) lines.push(`Structure: ${{point.breakdown.structure}}`);
+                                                if (point.breakdown.macro) lines.push(`Macro: ${{point.breakdown.macro}}`);
+                                                if (point.breakdown.sentiment) lines.push(`Sentiment: ${{point.breakdown.sentiment}}`);
+                                            }}
+                                            
+                                            return lines;
+                                        }}
+                                    }}
+                                }},
+                                annotation: {{
+                                    annotations: {{
+                                        executeLine: {{
+                                            type: 'line',
+                                            yMin: 75,
+                                            yMax: 75,
+                                            borderColor: '#26a69a',
+                                            borderWidth: 2,
+                                            borderDash: [5, 5],
+                                            label: {{
+                                                display: true,
+                                                content: 'Execute (75)',
+                                                position: 'end'
+                                            }}
+                                        }},
+                                        watchlistLine: {{
+                                            type: 'line',
+                                            yMin: 60,
+                                            yMax: 60,
+                                            borderColor: '#f59e0b',
+                                            borderWidth: 1,
+                                            borderDash: [3, 3],
+                                            label: {{
+                                                display: true,
+                                                content: 'Watchlist (60)',
+                                                position: 'end'
+                                            }}
+                                        }}
+                                    }}
+                                }}
+                            }},
+                            scales: {{
+                                x: {{
+                                    type: 'time',
+                                    time: {{
+                                        unit: 'hour',
+                                        displayFormats: {{
+                                            hour: 'HH:mm'
+                                        }}
+                                    }},
+                                    grid: {{
+                                        color: 'rgba(255,255,255,0.05)'
+                                    }},
+                                    ticks: {{
+                                        color: '#888'
+                                    }}
+                                }},
+                                y: {{
+                                    min: 0,
+                                    max: 105,
+                                    grid: {{
+                                        color: 'rgba(255,255,255,0.05)'
+                                    }},
+                                    ticks: {{
+                                        color: '#888'
+                                    }}
+                                }}
+                            }}
+                        }}
+                    }});
+                    
+                    // Draw threshold lines manually (since annotation plugin might not be loaded)
+                    const chart = scoreHistoryChartInstance;
+                    const originalDraw = chart.draw;
+                    chart.draw = function() {{
+                        originalDraw.apply(this, arguments);
+                        const ctx = this.ctx;
+                        const yAxis = this.scales.y;
+                        const xAxis = this.scales.x;
+                        
+                        // Execute line (75)
+                        ctx.save();
+                        ctx.strokeStyle = '#26a69a';
+                        ctx.lineWidth = 2;
+                        ctx.setLineDash([5, 5]);
+                        ctx.beginPath();
+                        const y75 = yAxis.getPixelForValue(75);
+                        ctx.moveTo(xAxis.left, y75);
+                        ctx.lineTo(xAxis.right, y75);
+                        ctx.stroke();
+                        
+                        // Watchlist line (60)
+                        ctx.strokeStyle = '#f59e0b';
+                        ctx.lineWidth = 1;
+                        ctx.setLineDash([3, 3]);
+                        ctx.beginPath();
+                        const y60 = yAxis.getPixelForValue(60);
+                        ctx.moveTo(xAxis.left, y60);
+                        ctx.lineTo(xAxis.right, y60);
+                        ctx.stroke();
+                        ctx.restore();
+                    }};
+                    
                 }} else {{
                     container.innerHTML = `
                         <div class="no-history">

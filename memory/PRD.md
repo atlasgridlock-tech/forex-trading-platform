@@ -26,6 +26,32 @@ A 15-agent autonomous forex trading system that analyzes market data, generates 
 - Watchlist threshold: 60-74
 - Blocked: <60
 
+## Features Completed (March 2025)
+
+### P1: Interactive Score History Charts ✅
+**Replaced static matplotlib PNG with interactive Chart.js charts:**
+- Real-time hover tooltips showing:
+  - Score value (e.g., "79/100")
+  - Direction: 📈 LONG (Buy) / 📉 SHORT (Sell) / ➡️ Neutral
+  - Decision status: EXECUTED, EXEC FAILED, BLOCKED, Execute Signal, Watchlist
+  - Strategy template name
+  - Component breakdown (Technical, Structure, Macro, Sentiment)
+- Color-coded data points:
+  - 🟢 Green = Executed
+  - 🔴 Red = Execution Failed
+  - 🟠 Orange = Blocked (high score)
+  - 🩵 Teal = Execute Signal
+  - 🟡 Amber = Watchlist
+  - 🔵 Blue = Regular reading
+- Visual legend below chart
+- Threshold lines at 75 (Execute) and 60 (Watchlist)
+
+### P0: Trade Execution Logging ✅
+- Fixed silent execution failures
+- Added detailed Guardian check logging
+- Added `blocked_high_score` status tracking
+- Enhanced error handling throughout pipeline
+
 ## Guardian Risk Checks (12 total)
 1. Kill switch status
 2. Risk mode (HALTED/REDUCED/NORMAL)
@@ -40,40 +66,14 @@ A 15-agent autonomous forex trading system that analyzes market data, generates 
 11. Revenge trading check
 12. Regime-based trading permission
 
-## Critical Issues Fixed (March 2025)
-
-### P0: Trade Execution Silent Failures
-**Problem**: Score hit 79 but no trade executed. Teal "execute" markers appeared but no execution attempted.
-
-**Root Cause**: The `stage_trade_decision` logic checked screening results BEFORE allowing score-based execution. If ANY screening failed (e.g., Guardian denied), the high score was ignored.
-
-**Fix Applied**:
-1. Rewrote decision logic to properly separate score decisions from screening blocks
-2. Added `blocked_high_score` status when score >= 75 but screenings failed
-3. Added detailed Guardian check logging (shows which of 12 checks failed)
-4. Added exception handling around order routing
-5. Added orange diamond marker (◆) on charts for blocked high-score setups
-
-## Chart Markers
-- Green circle (●) = Trade successfully executed
-- Red X (✗) = Execution FAILED
-- Orange diamond (◆) = Blocked despite high score (NEW!)
-- Teal triangle (▲) = Execute signal generated
-- Orange square (■) = Watchlist
-
 ## Files Modified (March 2025)
+- `/app/agents/orchestrator-agent/dashboard.py` - Added Chart.js, interactive charts, hover tooltips
 - `/app/agents/orchestrator-agent/lifecycle.py` - Decision logic, logging, error handling
 - `/app/agents/orchestrator-agent/score_history.py` - Chart markers
 - `/app/agents/execution-agent/app.py` - Safety check logging
 
-## Testing Checklist
-- [ ] High confluence score (75+) with ALL screenings passing → Should execute
-- [ ] High confluence score (75+) with Guardian denial → Should show orange diamond + detailed reason
-- [ ] Order routing failure → Should show red X + error details
-- [ ] Successful execution → Should show green circle
-
 ## Backlog
-- P1: Add hover info to score charts (buy/sell indication)
 - P1: Lower confluence threshold from 75 to ~70
 - P2: ATR-based trailing stops
 - P2: Multi-timeframe confluence weighting
+- P2: Enhanced FVG usage (entry triggers)
