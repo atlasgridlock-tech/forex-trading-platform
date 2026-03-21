@@ -292,6 +292,9 @@ def generate_score_history_chart(
             elif dec == "exec_failed":
                 # Execution failed - red X
                 ax.scatter([ts], [score], color='#ff0000', s=150, zorder=6, marker='X', edgecolors='white', linewidths=1.5)
+            elif dec == "blocked_high_score":
+                # High score but blocked by screening - orange diamond
+                ax.scatter([ts], [score], color='#ff6600', s=130, zorder=6, marker='D', edgecolors='white', linewidths=1.5)
             elif dec == "watchlist":
                 ax.scatter([ts], [score], color='#f59e0b', s=60, zorder=5, marker='s')
         
@@ -328,6 +331,7 @@ def generate_score_history_chart(
             Line2D([0], [0], color=CHART_COLORS["threshold_60"], linestyle='--', linewidth=1, label='Watchlist (60)'),
             Line2D([0], [0], marker='o', color='w', markerfacecolor='#00ff00', markersize=10, label='Trade Executed', linestyle='None'),
             Line2D([0], [0], marker='X', color='w', markerfacecolor='#ff0000', markersize=10, label='Exec FAILED', linestyle='None'),
+            Line2D([0], [0], marker='D', color='w', markerfacecolor='#ff6600', markersize=10, label='Blocked (high score)', linestyle='None'),
             Line2D([0], [0], marker='^', color='w', markerfacecolor='#26a69a', markersize=8, label='Execute Signal', linestyle='None'),
         ]
         ax.legend(handles=legend_elements, loc='upper left', fontsize=8,

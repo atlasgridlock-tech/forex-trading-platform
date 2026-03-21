@@ -773,37 +773,47 @@ class LifecycleManager:
             setup.direction
         )
         
-        # Check all screenings
+        # Check all screenings and collect reasons
+        screening_failed = False
+        
         if not risk.get("approved"):
-            reasons.append(risk.get("reason", "Risk screening failed"))
+            reasons.append(f"Guardian: {risk.get('reason', 'denied')}")
+            screening_failed = True
         
         if not portfolio.get("approved"):
-            reasons.append("Portfolio exposure too high")
+            reasons.append("Portfolio: exposure too high")
+            screening_failed = True
         
         if not execution.get("approved"):
-            reasons.append(execution.get("block_reason", "Execution screening failed"))
-        
-        # Confluence threshold (THE REAL DECISION POINT)
-        if confluence_score < 60:
-            reasons.append(f"Confluence too low ({confluence_score}/100)")
+            reasons.append(f"Executor: {execution.get('block_reason', 'denied')}")
+            screening_failed = True
         
         # Make decision based on CONFLUENCE SCORE
         print(f"   [{setup.symbol}] 📊 Confluence: {confluence_score}/100, Tactician: {setup.confidence}/100")
         
-        if not reasons:
-            if confluence_score >= 75:
-                decision = "BUY" if setup.direction == "long" else "SELL"
-                print(f"   [{setup.symbol}] ✅ APPROVED: {decision}")
-            elif confluence_score >= 60:
-                decision = "WATCHLIST"
-                reasons.append(f"Watchlist range ({confluence_score}/100)")
-                print(f"   [{setup.symbol}] 👀 WATCHLIST: {confluence_score}/100")
-            else:
-                decision = "NO_TRADE"
-                reasons.append(f"Below threshold ({confluence_score}/100)")
-                print(f"   [{setup.symbol}] ❌ NO_TRADE: {confluence_score}/100")
+        # Determine decision type based on score first
+        score_decision = "NO_TRADE"
+        if confluence_score >= 75:
+            score_decision = "BUY" if setup.direction == "long" else "SELL"
+        elif confluence_score >= 60:
+            score_decision = "WATCHLIST"
+        
+        # If screenings passed AND score is high enough, execute
+        if not screening_failed and score_decision in ["BUY", "SELL"]:
+            decision = score_decision
+            print(f"   [{setup.symbol}] ✅ APPROVED: {decision} (score={confluence_score})")
+        elif not screening_failed and score_decision == "WATCHLIST":
+            decision = "WATCHLIST"
+            reasons.append(f"Watchlist range ({confluence_score}/100)")
+            print(f"   [{setup.symbol}] 👀 WATCHLIST: {confluence_score}/100")
+        elif screening_failed and score_decision in ["BUY", "SELL"]:
+            # HIGH CONFLUENCE BUT SCREENING BLOCKED - this is critical to log!
+            decision = "BLOCKED"
+            print(f"   [{setup.symbol}] ⚠️ BLOCKED despite high score ({confluence_score}): {', '.join(reasons)}")
         else:
-            print(f"   [{setup.symbol}] ❌ BLOCKED: {', '.join(reasons)}")
+            if confluence_score < 60:
+                reasons.append(f"Confluence too low ({confluence_score}/100)")
+            print(f"   [{setup.symbol}] ❌ NO_TRADE: {confluence_score}/100 - {', '.join(reasons)}")
         
         result = {
             "decision": decision,
@@ -816,8 +826,16 @@ class LifecycleManager:
             "risk_pct": risk.get("risk_pct", 0),
         }
         
-        # Record score to history tracker for visualization
-        decision_type = "execute" if decision in ["BUY", "SELL"] else "watchlist" if decision == "WATCHLIST" else "blocked"
+        # Record score to history - use accurate decision type
+        if decision in ["BUY", "SELL"]:
+            decision_type = "execute"
+        elif decision == "BLOCKED" and confluence_score >= 75:
+            decision_type = "blocked_high_score"  # New! Shows score was high but blocked
+        elif decision == "WATCHLIST":
+            decision_type = "watchlist"
+        else:
+            decision_type = "blocked"
+        
         self._record_score_history(
             symbol=setup.symbol,
             score=confluence_score,
@@ -1327,11 +1345,18 @@ class LifecycleManager:
                 
                 # Stage 5: Risk screening
                 risk_ok, risk_result = await self.stage_risk_screening(setup)
-                print(f"   [{symbol}] Guardian: {'✓' if risk_ok else '✗'} {risk_result.get('reason', 'OK')}")
+                if risk_ok:
+                    print(f"   [{symbol}] Guardian: ✓ Approved")
+                else:
+                    # Show failed checks from Guardian
+                    failed_checks = [c.get("message") for c in risk_result.get("checks", []) if not c.get("passed")]
+                    print(f"   [{symbol}] Guardian: ✗ {risk_result.get('reason', 'denied')}")
+                    if failed_checks:
+                        print(f"   [{symbol}]    Failed checks: {', '.join(failed_checks)}")
                 
                 # Stage 6: Portfolio screening
                 portfolio_ok, portfolio_result = await self.stage_portfolio_screening(setup)
-                print(f"   [{symbol}] Balancer: {'✓' if portfolio_ok else '✗'}")
+                print(f"   [{symbol}] Balancer: {'✓' if portfolio_ok else '✗'} (exposure: {portfolio_result.get('exposure_score', 'N/A')})")
                 
                 # Stage 7: Execution screening
                 exec_ok, exec_result = await self.stage_execution_screening(setup)
@@ -1344,11 +1369,21 @@ class LifecycleManager:
                 
                 if decision in ["BUY", "SELL"]:
                     # Stage 9: Order routing
-                    trade = await self.stage_order_routing(setup, decision_result)
-                    if trade:
-                        cycle_result["trades_approved"] += 1
+                    try:
+                        print(f"   [{symbol}] 🚀 Calling order routing for {decision}...")
+                        trade = await self.stage_order_routing(setup, decision_result)
+                        if trade:
+                            cycle_result["trades_approved"] += 1
+                            print(f"   [{symbol}] ✅ Trade created: {trade.trade_id}")
+                        else:
+                            print(f"   [{symbol}] ❌ Order routing returned None")
+                    except Exception as e:
+                        print(f"   [{symbol}] ❌ Order routing EXCEPTION: {type(e).__name__}: {e}")
+                        import traceback
+                        traceback.print_exc()
                 else:
                     cycle_result["trades_rejected"] += 1
+                    print(f"   [{symbol}] Decision: {decision} - not executing")
             else:
                 # No setup generated - still record score history for tracking
                 # This helps visualize why a symbol isn't generating trades
