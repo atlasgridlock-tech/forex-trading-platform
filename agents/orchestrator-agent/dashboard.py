@@ -1322,9 +1322,11 @@ def get_dashboard_html(
                         scoreHistoryChartInstance = null;
                     }}
                     
-                    // Create canvas for Chart.js
+                    // Create canvas for Chart.js - use container div for fixed height
                     container.innerHTML = `
-                        <canvas id="scoreCanvas" style="width:100%;height:300px;"></canvas>
+                        <div style="position:relative;height:280px;width:100%;">
+                            <canvas id="scoreCanvas"></canvas>
+                        </div>
                         <div class="chart-legend">
                             <div class="legend-item"><span class="legend-dot" style="background:#00ff00"></span>Executed</div>
                             <div class="legend-item"><span class="legend-dot" style="background:#ff0000"></span>Exec Failed</div>
@@ -1351,6 +1353,12 @@ def get_dashboard_html(
                         strategy: h.strategy,
                         breakdown: h.breakdown
                     }}));
+                    
+                    // Create threshold line data (same x-range as main data)
+                    const minTime = dataPoints[0].x;
+                    const maxTime = dataPoints[dataPoints.length - 1].x;
+                    const executeLine = [{{x: minTime, y: 75}}, {{x: maxTime, y: 75}}];
+                    const watchlistLine = [{{x: minTime, y: 60}}, {{x: maxTime, y: 60}}];
                     
                     // Create chart
                     scoreHistoryChartInstance = new Chart(ctx, {{
@@ -1379,6 +1387,24 @@ def get_dashboard_html(
                                     }},
                                     pointBorderColor: '#fff',
                                     pointBorderWidth: 1,
+                                }},
+                                {{
+                                    label: 'Execute (75)',
+                                    data: executeLine,
+                                    borderColor: '#26a69a',
+                                    borderWidth: 2,
+                                    borderDash: [5, 5],
+                                    pointRadius: 0,
+                                    fill: false,
+                                }},
+                                {{
+                                    label: 'Watchlist (60)',
+                                    data: watchlistLine,
+                                    borderColor: '#f59e0b',
+                                    borderWidth: 1,
+                                    borderDash: [3, 3],
+                                    pointRadius: 0,
+                                    fill: false,
                                 }}
                             ]
                         }},
@@ -1401,13 +1427,20 @@ def get_dashboard_html(
                                     borderWidth: 1,
                                     padding: 12,
                                     displayColors: false,
+                                    filter: function(tooltipItem) {{
+                                        // Only show tooltip for main data, not threshold lines
+                                        return tooltipItem.datasetIndex === 0;
+                                    }},
                                     callbacks: {{
                                         title: function(tooltipItems) {{
+                                            if (!tooltipItems.length) return '';
                                             const date = new Date(tooltipItems[0].raw.x);
                                             return date.toLocaleString();
                                         }},
                                         label: function(context) {{
                                             const point = context.raw;
+                                            if (!point || !point.direction) return [];
+                                            
                                             const lines = [];
                                             
                                             // Score with colored indicator
@@ -1429,7 +1462,7 @@ def get_dashboard_html(
                                                 'blocked': '🚫 Blocked',
                                                 'no_setup': '— No Setup'
                                             }};
-                                            lines.push(decisionLabels[point.decision] || point.decision);
+                                            lines.push(decisionLabels[point.decision] || point.decision || '');
                                             
                                             // Strategy if available
                                             if (point.strategy && point.strategy !== 'none_qualified') {{
@@ -1446,36 +1479,6 @@ def get_dashboard_html(
                                             }}
                                             
                                             return lines;
-                                        }}
-                                    }}
-                                }},
-                                annotation: {{
-                                    annotations: {{
-                                        executeLine: {{
-                                            type: 'line',
-                                            yMin: 75,
-                                            yMax: 75,
-                                            borderColor: '#26a69a',
-                                            borderWidth: 2,
-                                            borderDash: [5, 5],
-                                            label: {{
-                                                display: true,
-                                                content: 'Execute (75)',
-                                                position: 'end'
-                                            }}
-                                        }},
-                                        watchlistLine: {{
-                                            type: 'line',
-                                            yMin: 60,
-                                            yMax: 60,
-                                            borderColor: '#f59e0b',
-                                            borderWidth: 1,
-                                            borderDash: [3, 3],
-                                            label: {{
-                                                display: true,
-                                                content: 'Watchlist (60)',
-                                                position: 'end'
-                                            }}
                                         }}
                                     }}
                                 }}
@@ -1509,38 +1512,6 @@ def get_dashboard_html(
                             }}
                         }}
                     }});
-                    
-                    // Draw threshold lines manually (since annotation plugin might not be loaded)
-                    const chart = scoreHistoryChartInstance;
-                    const originalDraw = chart.draw;
-                    chart.draw = function() {{
-                        originalDraw.apply(this, arguments);
-                        const ctx = this.ctx;
-                        const yAxis = this.scales.y;
-                        const xAxis = this.scales.x;
-                        
-                        // Execute line (75)
-                        ctx.save();
-                        ctx.strokeStyle = '#26a69a';
-                        ctx.lineWidth = 2;
-                        ctx.setLineDash([5, 5]);
-                        ctx.beginPath();
-                        const y75 = yAxis.getPixelForValue(75);
-                        ctx.moveTo(xAxis.left, y75);
-                        ctx.lineTo(xAxis.right, y75);
-                        ctx.stroke();
-                        
-                        // Watchlist line (60)
-                        ctx.strokeStyle = '#f59e0b';
-                        ctx.lineWidth = 1;
-                        ctx.setLineDash([3, 3]);
-                        ctx.beginPath();
-                        const y60 = yAxis.getPixelForValue(60);
-                        ctx.moveTo(xAxis.left, y60);
-                        ctx.lineTo(xAxis.right, y60);
-                        ctx.stroke();
-                        ctx.restore();
-                    }};
                     
                 }} else {{
                     container.innerHTML = `
