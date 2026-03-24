@@ -14,8 +14,16 @@ def get_dashboard_html(
     events: list,
     guardian_status: dict,
     session_info: str,
+    CONFIG: dict = None,  # Trading settings
 ):
     """Generate rich dashboard HTML."""
+    
+    # Default CONFIG if not provided
+    if CONFIG is None:
+        CONFIG = {
+            "decision_thresholds": {"execute": 68, "watchlist": 55, "no_trade": 40},
+            "hard_gates": {"max_spread_major": 2.5, "max_spread_cross": 4.0}
+        }
     
     # Count agents online
     agents_online = len([a for a in agent_status.values() if a.get("status") == "online"])
@@ -965,6 +973,70 @@ def get_dashboard_html(
             border-radius: 50%;
             border: 1px solid rgba(255,255,255,0.3);
         }}
+        
+        /* Settings panel styles */
+        .settings-grid {{
+            display: grid;
+            gap: 12px;
+        }}
+        
+        .setting-item {{
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }}
+        
+        .setting-item label {{
+            font-size: 12px;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }}
+        
+        .setting-item input {{
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 8px 10px;
+            color: var(--text-primary);
+            font-size: 14px;
+            font-weight: 600;
+            width: 100%;
+            box-sizing: border-box;
+        }}
+        
+        .setting-item input:focus {{
+            outline: none;
+            border-color: var(--primary);
+        }}
+        
+        .setting-hint {{
+            font-size: 10px;
+            color: var(--text-muted);
+        }}
+        
+        .save-btn {{
+            background: var(--success);
+            color: #000;
+            border: none;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }}
+        
+        .save-btn:hover {{
+            opacity: 0.9;
+        }}
+        
+        .save-btn.saving {{
+            background: var(--warning);
+        }}
+        
+        .save-btn.saved {{
+            background: var(--success);
+        }}
         }}
         
         .loading-small {{
@@ -1151,6 +1223,38 @@ def get_dashboard_html(
                         <div class="risk-stat">
                             <div class="risk-value">{g_positions}/{g_max}</div>
                             <div class="risk-label">Positions</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Trading Settings -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title"><span>⚙️</span> Trading Settings</div>
+                    <button onclick="saveSettings()" class="save-btn" id="saveSettingsBtn">Save</button>
+                </div>
+                <div class="card-body">
+                    <div class="settings-grid">
+                        <div class="setting-item">
+                            <label>Execute Threshold</label>
+                            <input type="number" id="executeThreshold" value="{CONFIG.get('decision_thresholds', {{}}).get('execute', 68)}" min="50" max="95" />
+                            <span class="setting-hint">Score needed to execute (default: 68)</span>
+                        </div>
+                        <div class="setting-item">
+                            <label>Watchlist Threshold</label>
+                            <input type="number" id="watchlistThreshold" value="{CONFIG.get('decision_thresholds', {{}}).get('watchlist', 55)}" min="30" max="80" />
+                            <span class="setting-hint">Score needed for watchlist (default: 55)</span>
+                        </div>
+                        <div class="setting-item">
+                            <label>Max Spread (Major)</label>
+                            <input type="number" id="maxSpreadMajor" value="{CONFIG.get('hard_gates', {{}}).get('max_spread_major', 2.5)}" min="0.5" max="10" step="0.5" />
+                            <span class="setting-hint">Max spread for major pairs (pips)</span>
+                        </div>
+                        <div class="setting-item">
+                            <label>Max Spread (Cross)</label>
+                            <input type="number" id="maxSpreadCross" value="{CONFIG.get('hard_gates', {{}}).get('max_spread_cross', 4.0)}" min="1" max="15" step="0.5" />
+                            <span class="setting-hint">Max spread for cross pairs (pips)</span>
                         </div>
                     </div>
                 </div>
@@ -1750,6 +1854,61 @@ def get_dashboard_html(
                 }}
             }} catch (e) {{
                 console.log('Refresh failed:', e);
+            }}
+        }}
+        
+        // Save trading settings
+        async function saveSettings() {{
+            const btn = document.getElementById('saveSettingsBtn');
+            btn.textContent = 'Saving...';
+            btn.classList.add('saving');
+            
+            const newConfig = {{
+                decision_thresholds: {{
+                    execute: parseInt(document.getElementById('executeThreshold').value),
+                    watchlist: parseInt(document.getElementById('watchlistThreshold').value),
+                    no_trade: 40
+                }},
+                hard_gates: {{
+                    max_spread_major: parseFloat(document.getElementById('maxSpreadMajor').value),
+                    max_spread_cross: parseFloat(document.getElementById('maxSpreadCross').value),
+                    min_data_quality: 70,
+                    max_exposure_score: 80,
+                    event_block_hours: 4
+                }}
+            }};
+            
+            try {{
+                const response = await fetch('/api/config', {{
+                    method: 'POST',
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify(newConfig)
+                }});
+                
+                if (response.ok) {{
+                    btn.textContent = 'Saved ✓';
+                    btn.classList.remove('saving');
+                    btn.classList.add('saved');
+                    
+                    // Show what thresholds are now active
+                    const exec = document.getElementById('executeThreshold').value;
+                    const watch = document.getElementById('watchlistThreshold').value;
+                    console.log(`Settings saved: Execute >= ${{exec}}, Watchlist >= ${{watch}}`);
+                    
+                    setTimeout(() => {{
+                        btn.textContent = 'Save';
+                        btn.classList.remove('saved');
+                    }}, 2000);
+                }} else {{
+                    btn.textContent = 'Error!';
+                    btn.classList.remove('saving');
+                    setTimeout(() => {{ btn.textContent = 'Save'; }}, 2000);
+                }}
+            }} catch (e) {{
+                console.error('Save failed:', e);
+                btn.textContent = 'Error!';
+                btn.classList.remove('saving');
+                setTimeout(() => {{ btn.textContent = 'Save'; }}, 2000);
             }}
         }}
         

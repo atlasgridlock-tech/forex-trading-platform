@@ -818,11 +818,24 @@ class LifecycleManager:
         # Make decision based on CONFLUENCE SCORE
         print(f"   [{setup.symbol}] 📊 Confluence: {confluence_score}/100, Tactician: {setup.confidence}/100")
         
-        # Determine decision type based on score first
-        # THRESHOLD LOWERED FROM 75 TO 68 - March 2026
-        EXECUTE_THRESHOLD = 68
-        WATCHLIST_THRESHOLD = 55
+        # Get thresholds from CONFIG (can be changed via Nexus settings)
+        # Fetch from orchestrator's config endpoint
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get("http://localhost:3020/api/config", timeout=5.0)
+                if resp.status_code == 200:
+                    config = resp.json()
+                    thresholds = config.get("decision_thresholds", {})
+                    EXECUTE_THRESHOLD = thresholds.get("execute", 68)
+                    WATCHLIST_THRESHOLD = thresholds.get("watchlist", 55)
+                else:
+                    EXECUTE_THRESHOLD = 68
+                    WATCHLIST_THRESHOLD = 55
+        except:
+            EXECUTE_THRESHOLD = 68
+            WATCHLIST_THRESHOLD = 55
         
+        # Determine decision type based on score
         score_decision = "NO_TRADE"
         if confluence_score >= EXECUTE_THRESHOLD:
             score_decision = "BUY" if setup.direction == "long" else "SELL"

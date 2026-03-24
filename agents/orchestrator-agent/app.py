@@ -109,8 +109,8 @@ CONFIG = {
         "risk_execution": 0.15,
     },
     "decision_thresholds": {
-        "execute": 75,
-        "watchlist": 60,
+        "execute": 68,      # Lowered from 75 - March 2026
+        "watchlist": 55,    # Lowered from 60 - March 2026
         "no_trade": 40,
     },
     "hard_gates": {
@@ -1182,6 +1182,7 @@ async def home():
             events=events,
             guardian_status=guardian_status,
             session_info=session_info,
+            CONFIG=CONFIG,  # Pass trading settings
         )
     
     # Fallback to basic dashboard
