@@ -25,6 +25,12 @@ def get_dashboard_html(
             "hard_gates": {"max_spread_major": 2.5, "max_spread_cross": 4.0}
         }
     
+    # Extract settings values for use in HTML template
+    execute_threshold = CONFIG.get("decision_thresholds", {}).get("execute", 68)
+    watchlist_threshold = CONFIG.get("decision_thresholds", {}).get("watchlist", 55)
+    max_spread_major = CONFIG.get("hard_gates", {}).get("max_spread_major", 2.5)
+    max_spread_cross = CONFIG.get("hard_gates", {}).get("max_spread_cross", 4.0)
+    
     # Count agents online
     agents_online = len([a for a in agent_status.values() if a.get("status") == "online"])
     total_agents = len(agent_status)
@@ -1238,22 +1244,22 @@ def get_dashboard_html(
                     <div class="settings-grid">
                         <div class="setting-item">
                             <label>Execute Threshold</label>
-                            <input type="number" id="executeThreshold" value="{CONFIG.get('decision_thresholds', {{}}).get('execute', 68)}" min="50" max="95" />
+                            <input type="number" id="executeThreshold" value="{execute_threshold}" min="50" max="95" />
                             <span class="setting-hint">Score needed to execute (default: 68)</span>
                         </div>
                         <div class="setting-item">
                             <label>Watchlist Threshold</label>
-                            <input type="number" id="watchlistThreshold" value="{CONFIG.get('decision_thresholds', {{}}).get('watchlist', 55)}" min="30" max="80" />
+                            <input type="number" id="watchlistThreshold" value="{watchlist_threshold}" min="30" max="80" />
                             <span class="setting-hint">Score needed for watchlist (default: 55)</span>
                         </div>
                         <div class="setting-item">
                             <label>Max Spread (Major)</label>
-                            <input type="number" id="maxSpreadMajor" value="{CONFIG.get('hard_gates', {{}}).get('max_spread_major', 2.5)}" min="0.5" max="10" step="0.5" />
+                            <input type="number" id="maxSpreadMajor" value="{max_spread_major}" min="0.5" max="10" step="0.5" />
                             <span class="setting-hint">Max spread for major pairs (pips)</span>
                         </div>
                         <div class="setting-item">
                             <label>Max Spread (Cross)</label>
-                            <input type="number" id="maxSpreadCross" value="{CONFIG.get('hard_gates', {{}}).get('max_spread_cross', 4.0)}" min="1" max="15" step="0.5" />
+                            <input type="number" id="maxSpreadCross" value="{max_spread_cross}" min="1" max="15" step="0.5" />
                             <span class="setting-hint">Max spread for cross pairs (pips)</span>
                         </div>
                     </div>
