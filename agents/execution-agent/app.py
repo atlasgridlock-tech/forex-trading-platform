@@ -254,10 +254,10 @@ async def send_to_orchestrator(receipt: dict):
             "output_type": "execution",
             "timestamp": datetime.utcnow().isoformat(),
             "data": {
-                "order_id": receipt["order_id"],
-                "symbol": receipt["symbol"],
-                "direction": receipt["direction"],
-                "status": receipt["status"],
+                "order_id": receipt.get("order_id", "UNKNOWN"),
+                "symbol": receipt.get("symbol", "UNKNOWN"),
+                "direction": receipt.get("direction", "UNKNOWN"),
+                "status": receipt.get("status", "UNKNOWN"),
                 "fill_price": receipt.get("fill_price"),
                 "health_score": receipt.get("health_score"),
             },
@@ -593,6 +593,8 @@ def execute_live_order(order: OrderRequest) -> dict:
     if result is None:
         return {
             "order_id": command_id,
+            "symbol": order.symbol,
+            "direction": order.direction,
             "status": "TIMEOUT",
             "error": "MT5 Bridge did not respond in time",
             "mode": "guarded_live",

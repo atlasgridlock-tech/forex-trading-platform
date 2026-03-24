@@ -950,7 +950,8 @@ class LifecycleManager:
         print(f"[Lifecycle] 🚀 EXECUTING TRADE: {setup.symbol} {setup.direction.upper()}")
         print(f"[Lifecycle]    Payload: {execution_payload}")
         
-        result = await self.post_agent("executor", "/api/execute", execution_payload)
+        # Use longer timeout for execution (MT5 bridge waits up to 30s)
+        result = await self.post_agent("executor", "/api/execute", execution_payload, timeout=45.0)
         
         # Log the full response for debugging
         print(f"[Lifecycle]    Executor Response: {result}")
