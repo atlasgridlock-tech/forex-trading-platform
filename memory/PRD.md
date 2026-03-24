@@ -3,77 +3,64 @@
 ## Overview
 A 15-agent autonomous forex trading system that analyzes market data, generates trade setups, and executes trades based on confluence scoring.
 
+## Critical Parameters (March 2026 Update)
+
+### Execution Thresholds
+```python
+EXECUTE_THRESHOLD = 68   # Lowered from 75 - March 2026
+WATCHLIST_THRESHOLD = 55 # Lowered from 60 - March 2026
+```
+
+### Why Changed:
+- Max achievable confluence score is ~86, not 100
+- 75 threshold was too restrictive - many good setups scoring 68-74
+- System was picking wrong direction (first qualified vs highest confluence)
+
+## Key Bug Fixes (March 2026)
+
+### 1. Direction Selection Bug
+**Problem:** System picked first qualified strategy direction, even if opposite direction had higher confluence
+**Example:** Range Fade (LONG) = 70, Failed Breakout (SHORT) = 79 → System picked LONG!
+**Fix:** Now checks confluence for ALL qualified strategies and picks highest
+
+### 2. Score Threshold Bug  
+**Problem:** Threshold 75 was nearly impossible to reach (max ~86)
+**Fix:** Lowered to 68
+
+### 3. Silent Execution Failures
+**Problem:** `post_agent` swallowed all errors with bare `except: pass`
+**Fix:** Added comprehensive error logging
+
+## Confluence Scoring (Max ~86)
+| Component | Max Score |
+|-----------|-----------|
+| Technical | 25 |
+| Structure | 15 |
+| Macro | 15 |
+| Sentiment | 10 |
+| Regime | 10 |
+| Risk/Execution | 11 |
+| **TOTAL** | **~86** |
+
 ## Core Architecture
-- **Orchestrator (Nexus)**: Central coordination, lifecycle management, score history tracking
-- **Data Agent (Curator)**: Market data feeds from MT5
-- **Technical Agent (Atlas)**: Technical analysis indicators
-- **Structure Agent (Architect)**: Market structure (support/resistance, FVGs)
-- **Sentiment Agent (Pulse)**: Retail sentiment from Myfxbook
-- **Macro Agent (Oracle)**: Economic calendar, FRED data
-- **News Agent (Sentinel)**: Headline analysis via Claude
-- **Regime Agent (Compass)**: Market regime classification
-- **Strategy Agent (Tactician)**: Trade setup generation
-- **Risk Agent (Guardian)**: Position sizing, risk checks (12 checks total)
-- **Portfolio Agent (Balancer)**: Exposure management
-- **Execution Agent (Executor)**: Order execution via MT5
-- **Journal Agent (Chronicle)**: Trade journaling with charts
-- **Analytics Agent (Insight)**: Performance attribution
-- **Governance Agent (Arbiter)**: Strategy improvement
+- 15+ Python FastAPI microservices
+- PostgreSQL/TimescaleDB for market data
+- Redis for pub/sub
+- MT5 file bridge for execution
+- Claude AI for headline sentiment
 
-## Confluence Scoring System
-- Multi-factor scoring: Technical (25pts), Structure (15pts), Macro (15pts), Sentiment (10pts), Regime (10pts), Risk/Execution (11pts)
-- Execute threshold: 75+
-- Watchlist threshold: 60-74
-- Blocked: <60
+## Files Modified
+- `/app/agents/orchestrator-agent/lifecycle.py`
+  - Lowered thresholds (68/55)
+  - Smart direction selection (picks highest confluence)
+  - Enhanced logging
 
-## Features Completed (March 2025)
-
-### P1: Interactive Score History Charts ✅
-**Replaced static matplotlib PNG with interactive Chart.js charts:**
-- Real-time hover tooltips showing:
-  - Score value (e.g., "79/100")
-  - Direction: 📈 LONG (Buy) / 📉 SHORT (Sell) / ➡️ Neutral
-  - Decision status: EXECUTED, EXEC FAILED, BLOCKED, Execute Signal, Watchlist
-  - Strategy template name
-  - Component breakdown (Technical, Structure, Macro, Sentiment)
-- Color-coded data points:
-  - 🟢 Green = Executed
-  - 🔴 Red = Execution Failed
-  - 🟠 Orange = Blocked (high score)
-  - 🩵 Teal = Execute Signal
-  - 🟡 Amber = Watchlist
-  - 🔵 Blue = Regular reading
-- Visual legend below chart
-- Threshold lines at 75 (Execute) and 60 (Watchlist)
-
-### P0: Trade Execution Logging ✅
-- Fixed silent execution failures
-- Added detailed Guardian check logging
-- Added `blocked_high_score` status tracking
-- Enhanced error handling throughout pipeline
-
-## Guardian Risk Checks (12 total)
-1. Kill switch status
-2. Risk mode (HALTED/REDUCED/NORMAL)
-3. Stop distance validation (min 2 pips)
-4. Absolute max risk check
-5. Mode-specific risk limits
-6. Daily loss limit
-7. Weekly drawdown limit
-8. Position limit
-9. Correlated exposure
-10. Daily trades limit
-11. Revenge trading check
-12. Regime-based trading permission
-
-## Files Modified (March 2025)
-- `/app/agents/orchestrator-agent/dashboard.py` - Added Chart.js, interactive charts, hover tooltips
-- `/app/agents/orchestrator-agent/lifecycle.py` - Decision logic, logging, error handling
-- `/app/agents/orchestrator-agent/score_history.py` - Chart markers
-- `/app/agents/execution-agent/app.py` - Safety check logging
+## Testing Checklist
+- [ ] Score 68+ → Should execute
+- [ ] Multiple qualified strategies → Should pick highest confluence direction
+- [ ] Score history shows green circles for executed trades
 
 ## Backlog
-- P1: Lower confluence threshold from 75 to ~70
 - P2: ATR-based trailing stops
 - P2: Multi-timeframe confluence weighting
-- P2: Enhanced FVG usage (entry triggers)
+- P2: Consider raising threshold to 70 if too many trades

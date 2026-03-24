@@ -551,7 +551,9 @@ class LifecycleManager:
         
         if result and result.get("setups"):
             setups = result["setups"]
-            # Get the best qualified setup (first one, already sorted by score)
+            qualified_setups = []
+            
+            # Collect ALL qualified setups first
             for setup_data in setups:
                 tactician_score = setup_data.get("score", 0)
                 qualified = setup_data.get("qualified", False)
@@ -562,14 +564,37 @@ class LifecycleManager:
                 # Allow setups with score >= 55 if qualified (lowered from 70)
                 # The real decision is made by confluence score later
                 if tactician_score < 55:
-                    print(f"   [{symbol}] ❌ Score {tactician_score} below minimum (55)")
                     continue
                 
                 if not qualified:
-                    print(f"   [{symbol}] ❌ Strategy not qualified: {setup_data.get('rejection_reason', 'Unknown')}")
                     continue
                 
-                # Map Tactician response to TradeSetup
+                qualified_setups.append(setup_data)
+            
+            # If we have qualified setups, pick the one with the HIGHEST CONFLUENCE score
+            # (not just the first one by Tactician score)
+            best_setup = None
+            best_confluence = 0
+            
+            for setup_data in qualified_setups:
+                direction = setup_data.get("direction", "long")
+                # Normalize direction
+                if direction in ["bearish", "short", "sell"]:
+                    direction = "short"
+                else:
+                    direction = "long"
+                
+                # Get confluence score for this direction
+                confluence_score, _ = await self.get_confluence_score(symbol, direction)
+                
+                print(f"   [{symbol}] Checking {setup_data.get('name')}: Tactician={setup_data.get('score')}, Confluence({direction})={confluence_score}")
+                
+                if confluence_score > best_confluence:
+                    best_confluence = confluence_score
+                    best_setup = setup_data
+            
+            if best_setup:
+                setup_data = best_setup
                 targets = setup_data.get("targets", [])
                 direction = setup_data.get("direction", "long")
                 # Normalize direction
@@ -577,6 +602,8 @@ class LifecycleManager:
                     direction = "short"
                 else:
                     direction = "long"
+                
+                print(f"   [{symbol}] 🎯 Selected best setup: {setup_data.get('name')}, Direction: {direction}, Confluence: {best_confluence}")
                 
                 setup = TradeSetup(
                     setup_id=f"SETUP-{symbol}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
@@ -792,10 +819,14 @@ class LifecycleManager:
         print(f"   [{setup.symbol}] 📊 Confluence: {confluence_score}/100, Tactician: {setup.confidence}/100")
         
         # Determine decision type based on score first
+        # THRESHOLD LOWERED FROM 75 TO 68 - March 2026
+        EXECUTE_THRESHOLD = 68
+        WATCHLIST_THRESHOLD = 55
+        
         score_decision = "NO_TRADE"
-        if confluence_score >= 75:
+        if confluence_score >= EXECUTE_THRESHOLD:
             score_decision = "BUY" if setup.direction == "long" else "SELL"
-        elif confluence_score >= 60:
+        elif confluence_score >= WATCHLIST_THRESHOLD:
             score_decision = "WATCHLIST"
         
         # If screenings passed AND score is high enough, execute
