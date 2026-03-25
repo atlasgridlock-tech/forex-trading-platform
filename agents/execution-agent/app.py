@@ -162,7 +162,7 @@ def is_duplicate_signal(order: OrderRequest) -> bool:
 def is_martingale(order: OrderRequest) -> bool:
     """Detect martingale pattern (increasing size after loss)."""
     # Check last trade on this symbol
-    symbol_trades = [r for r in execution_receipts if r["symbol"] == order.symbol]
+    symbol_trades = [r for r in execution_receipts if r.get("symbol") == order.symbol]
     if len(symbol_trades) < 2:
         return False
     
@@ -178,8 +178,8 @@ def is_averaging_down(order: OrderRequest) -> bool:
     """Detect averaging down (adding to losing position)."""
     # Check if we have an open position in this symbol
     for pos in paper_positions:
-        if pos["symbol"] == order.symbol:
-            if pos["direction"] == order.direction:
+        if pos.get("symbol") == order.symbol:
+            if pos.get("direction") == order.direction:
                 # Same direction, check if position is losing
                 if pos.get("unrealized_pnl", 0) < 0:
                     return True  # Adding to losing position
