@@ -2,9 +2,10 @@
 //|                                             AgentBridge_v6.mq5   |
 //|                                    Forex Multi-Agent Platform    |
 //|                      Full Bridge: Data Export + Order Execution  |
+//|                      v6.1 - Fixed CSV delimiter (semicolon)      |
 //+------------------------------------------------------------------+
 #property copyright "Forex Platform"
-#property version   "6.00"
+#property version   "6.10"
 #property strict
 
 // Settings
@@ -36,8 +37,9 @@ int OnInit()
     
     EventSetTimer(UpdateInterval);
     Print("═══════════════════════════════════════════════════════════════");
-    Print("AgentBridge v6.0 - FULL BRIDGE (Data + Orders)");
+    Print("AgentBridge v6.1 - FULL BRIDGE (Data + Orders)");
     Print("═══════════════════════════════════════════════════════════════");
+    Print("FIXED: CSV delimiter now uses semicolon (;) for all files");
     Print("Found ", symbolCount, " symbols in Market Watch");
     Print("Update interval: ", UpdateInterval, " seconds");
     Print("Max slippage: ", MaxSlippagePips, " pips");
@@ -287,7 +289,8 @@ void ExportAccountData()
 void ExportPositions()
 {
     string filename = "positions.csv";
-    int handle = FileOpen(filename, FILE_WRITE|FILE_CSV|FILE_COMMON|FILE_ANSI);
+    // Use semicolon delimiter for consistency with Python reader
+    int handle = FileOpen(filename, FILE_WRITE|FILE_CSV|FILE_COMMON|FILE_ANSI, ';');
     
     if(handle == INVALID_HANDLE)
     {
@@ -343,14 +346,17 @@ void ProcessPendingOrders()
     if(!FileIsExist(filename, FILE_COMMON))
         return;
     
-    int handle = FileOpen(filename, FILE_READ|FILE_CSV|FILE_COMMON|FILE_ANSI);
+    int handle = FileOpen(filename, FILE_READ|FILE_CSV|FILE_COMMON|FILE_ANSI, ';');
     if(handle == INVALID_HANDLE)
+    {
+        Print("ERROR: Cannot open ", filename, " - Error: ", GetLastError());
         return;
+    }
     
-    // Skip header
-    string header = FileReadString(handle);
+    Print("[OrderBridge] Processing pending_orders.csv...");
     
-    // Process orders
+    // Process orders - NO HEADER EXPECTED (Python writes without header)
+    int orderCount = 0;
     while(!FileIsEnding(handle))
     {
         string orderId = FileReadString(handle);
@@ -363,6 +369,8 @@ void ProcessPendingOrders()
         
         if(orderId == "" || symbol == "")
             continue;
+        
+        Print("[OrderBridge] Order: ", orderId, " | ", symbol, " | ", action, " | Vol:", volumeStr, " | SL:", slStr);
         
         // Find broker symbol
         string brokerSymbol = FindBrokerSymbol(symbol);
@@ -397,14 +405,24 @@ void ProcessPendingOrders()
         {
             success = ModifyPosition(brokerSymbol, sl, tp, resultMsg);
         }
+        else
+        {
+            WriteOrderResult(orderId, "REJECTED", "Unknown action: " + action);
+            continue;
+        }
         
         // Write result
         WriteOrderResult(orderId, success ? "FILLED" : "REJECTED", resultMsg, ticket);
+        orderCount++;
     }
     
     FileClose(handle);
     
     // Delete processed file
+    if(orderCount > 0)
+    {
+        Print("[OrderBridge] Processed ", orderCount, " orders, deleting file");
+    }
     FileDelete(filename, FILE_COMMON);
 }
 
@@ -538,12 +556,18 @@ bool ModifyPosition(string symbol, double newSL, double newTP, string &resultMsg
 void WriteOrderResult(string orderId, string status, string message, ulong ticket = 0)
 {
     string filename = "order_results.csv";
-    int handle = FileOpen(filename, FILE_READ|FILE_WRITE|FILE_CSV|FILE_COMMON|FILE_ANSI);
+    // Use semicolon delimiter explicitly to match Python reader
+    int handle = FileOpen(filename, FILE_READ|FILE_WRITE|FILE_CSV|FILE_COMMON|FILE_ANSI, ';');
     
     if(handle == INVALID_HANDLE)
     {
-        handle = FileOpen(filename, FILE_WRITE|FILE_CSV|FILE_COMMON|FILE_ANSI);
-        if(handle == INVALID_HANDLE) return;
+        handle = FileOpen(filename, FILE_WRITE|FILE_CSV|FILE_COMMON|FILE_ANSI, ';');
+        if(handle == INVALID_HANDLE)
+        {
+            Print("ERROR: Cannot write order result to ", filename, " - Error: ", GetLastError());
+            return;
+        }
+        // Write header for new file
         FileWrite(handle, "OrderId", "Status", "Message", "Ticket", "Time");
     }
     else
@@ -554,6 +578,8 @@ void WriteOrderResult(string orderId, string status, string message, ulong ticke
     FileWrite(handle, orderId, status, message, IntegerToString(ticket), 
               TimeToString(TimeCurrent(), TIME_DATE|TIME_SECONDS));
     FileClose(handle);
+    
+    Print("[OrderBridge] Result written: ", orderId, " = ", status, " - ", message);
 }
 
 //+------------------------------------------------------------------+

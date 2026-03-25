@@ -3,6 +3,26 @@
 ## Overview
 A 15-agent autonomous forex trading system that analyzes market data, generates trade setups, and executes trades based on confluence scoring.
 
+## Critical Bug Fix - December 2025
+
+### MT5 OrderBridge CSV Delimiter Mismatch (P0 FIXED)
+**Root Cause**: Python was writing CSV with tab delimiter, but MT5's FILE_CSV reads with semicolon delimiter by default. This caused the EA to misparse order data.
+
+**Fix Applied**:
+1. `order_bridge.py`: Now writes with semicolon (`;`) delimiter
+2. `order_bridge.py`: Removed header row (EA's header skip was buggy)
+3. `AgentBridge_v6.mq5` (now v6.1): Explicitly uses semicolon delimiter in all FileOpen calls
+4. Added extensive debug logging to trace file paths and content
+
+**Files Changed**:
+- `/app/agents/shared/order_bridge.py`
+- `/app/mt5_ea/AgentBridge_v6.mq5`
+
+**User Action Required**: 
+- Recompile AgentBridge_v6.mq5 in MetaEditor
+- Attach the new EA to a chart in MT5
+- Verify the EA shows "v6.1" in the Experts tab
+
 ## Critical Parameters (March 2026 Update)
 
 ### Execution Thresholds
@@ -54,6 +74,16 @@ WATCHLIST_THRESHOLD = 55 # Lowered from 60 - March 2026
   - Lowered thresholds (68/55)
   - Smart direction selection (picks highest confluence)
   - Enhanced logging
+
+- `/app/agents/shared/order_bridge.py`
+  - Fixed CSV delimiter to semicolon (;)
+  - Removed header row (EA header parsing was buggy)
+  - Added debug logging for file paths and content
+
+- `/app/mt5_ea/AgentBridge_v6.mq5` (now v6.1)
+  - Fixed CSV delimiter to semicolon in all FileOpen calls
+  - Added logging for order processing
+  - User must recompile and redeploy
 
 ## Testing Checklist
 - [ ] Score 68+ → Should execute
