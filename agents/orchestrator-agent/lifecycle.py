@@ -826,14 +826,14 @@ class LifecycleManager:
                 if resp.status_code == 200:
                     config = resp.json()
                     thresholds = config.get("decision_thresholds", {})
-                    EXECUTE_THRESHOLD = thresholds.get("execute", 68)
-                    WATCHLIST_THRESHOLD = thresholds.get("watchlist", 55)
+                    EXECUTE_THRESHOLD = thresholds.get("execute", 55)
+                    WATCHLIST_THRESHOLD = thresholds.get("watchlist", 45)
                 else:
-                    EXECUTE_THRESHOLD = 68
-                    WATCHLIST_THRESHOLD = 55
+                    EXECUTE_THRESHOLD = 55
+                    WATCHLIST_THRESHOLD = 45
         except:
-            EXECUTE_THRESHOLD = 68
-            WATCHLIST_THRESHOLD = 55
+            EXECUTE_THRESHOLD = 55
+            WATCHLIST_THRESHOLD = 45
         
         # Determine decision type based on score
         score_decision = "NO_TRADE"

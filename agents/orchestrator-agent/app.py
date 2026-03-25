@@ -109,13 +109,13 @@ CONFIG = {
         "risk_execution": 0.15,
     },
     "decision_thresholds": {
-        "execute": 68,      # Lowered from 75 - March 2026
-        "watchlist": 55,    # Lowered from 60 - March 2026
-        "no_trade": 40,
+        "execute": 55,      # Lowered to match realistic confluence scores
+        "watchlist": 45,    # Lowered accordingly
+        "no_trade": 30,
     },
     "hard_gates": {
-        "max_spread_major": 2.5,
-        "max_spread_cross": 4.0,
+        "max_spread_major": 3.0,   # Increased from 2.5
+        "max_spread_cross": 5.0,   # Increased from 4.0
         "min_data_quality": 70,
         "max_exposure_score": 80,
         "event_block_hours": 4,
