@@ -1118,12 +1118,12 @@ class LifecycleManager:
             trade.tp1_hit = True
             trade.tp1_exit_price = trade.current_price
             
-            # Execute partial close (50%)
+            # Execute partial close (50%) - use longer timeout for MT5 bridge operations
             close_pct = framework.tp1_pct * 100  # 0.5 -> 50%
             partial_result = await self.post_agent("executor", "/api/partial-close", {
                 "ticket": trade.broker_ticket,
                 "close_percent": close_pct,
-            })
+            }, timeout=35.0)  # MT5 bridge can take up to 30s
             self.log_stage(LifecycleStage.EXIT_MANAGEMENT, trade.setup.symbol, {
                 "action": "PARTIAL_CLOSE_TP1",
                 "percent": close_pct,
@@ -1139,7 +1139,7 @@ class LifecycleManager:
                     "ticket": trade.broker_ticket,
                     "new_sl": be_price,
                     "new_tp": 0,  # No TP - we manage exits manually
-                })
+                }, timeout=35.0)  # MT5 bridge can take up to 30s
                 self.log_stage(LifecycleStage.EXIT_MANAGEMENT, trade.setup.symbol, {
                     "action": "MOVE_SL_TO_BE",
                     "new_sl": be_price,
@@ -1151,12 +1151,12 @@ class LifecycleManager:
             trade.tp2_hit = True
             trade.tp2_exit_price = trade.current_price
             
-            # Close 60% of what's left (which is ~30% of original)
+            # Close 60% of what's left (which is ~30% of original) - use longer timeout for MT5
             close_pct = 60.0  # 60% of remaining after TP1
             partial_result = await self.post_agent("executor", "/api/partial-close", {
                 "ticket": trade.broker_ticket,
                 "close_percent": close_pct,
-            })
+            }, timeout=35.0)  # MT5 bridge can take up to 30s
             self.log_stage(LifecycleStage.EXIT_MANAGEMENT, trade.setup.symbol, {
                 "action": "PARTIAL_CLOSE_TP2",
                 "percent": close_pct,
@@ -1185,11 +1185,11 @@ class LifecycleManager:
             trade.exit_time = datetime.utcnow()
             trade.status = TradeStatus.CLOSED
             
-            # Close via executor
+            # Close via executor - use longer timeout for MT5 bridge
             await self.post_agent("executor", "/api/close", {
                 "ticket": trade.broker_ticket,
                 "reason": exit_reason.value,
-            })
+            }, timeout=35.0)  # MT5 bridge can take up to 30s
             
             # Log to chronicle
             await self.post_agent("chronicle", "/api/trade/close", {

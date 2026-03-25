@@ -3,6 +3,28 @@
 ## Overview
 A 15-agent autonomous forex trading system that analyzes market data, generates trade setups, and executes trades based on confluence scoring.
 
+## Latest Fix - December 2025
+
+### P0: Orchestrator-Executor Communication Timeouts (FIXED)
+**Root Cause**: The executor agent's MT5 bridge operations (`partial-close`, `modify-sl`, `close`, etc.) used synchronous `time.sleep()` polling which blocked the entire FastAPI event loop, causing all other requests to timeout.
+
+**Fix Applied**:
+- Created `read_mt5_result_async()` - async version using `asyncio.sleep()`
+- Updated `/api/partial-close`, `/api/modify-sl`, `/api/close`, `/api/place-pending`, `/api/cancel-pending` to use async version
+- Increased timeout for MT5 bridge operations in lifecycle.py from 10s to 35s
+
+**Files Modified**:
+- `/app/agents/execution-agent/app.py` - Added async MT5 result polling
+- `/app/agents/orchestrator-agent/lifecycle.py` - Increased timeouts for MT5 operations
+
+### P1: Malformed order_results.csv Parsing (FIXED)
+**Root Cause**: Historical malformed data in `order_results.csv` could break the CSV reader.
+
+**Fix Applied**:
+- `order_bridge.py`: Added per-row exception handling to skip malformed historical rows while finding our result
+
+**User Action**: Delete the old `order_results.csv` file one more time for a clean state.
+
 ## Critical Bug Fixes - March 2026
 
 ### 1. MT5 OrderBridge CSV Delimiter Mismatch (P0 FIXED)
@@ -37,10 +59,11 @@ A 15-agent autonomous forex trading system that analyzes market data, generates 
 ## Files Modified This Session
 | File | Changes |
 |------|---------|
-| `/app/agents/shared/order_bridge.py` | Semicolon delimiter, no header, debug logging |
+| `/app/agents/shared/order_bridge.py` | Semicolon delimiter, no header, debug logging, resilient row parsing |
 | `/app/agents/data-agent/app.py` | Read positions.csv with semicolon delimiter |
-| `/app/agents/execution-agent/app.py` | Read positions.csv, include order details on timeout |
+| `/app/agents/execution-agent/app.py` | Read positions.csv, async MT5 result polling, include order details on timeout |
 | `/app/agents/orchestrator-agent/app.py` | Map BUY/SELL to LONG/SHORT for display |
+| `/app/agents/orchestrator-agent/lifecycle.py` | Increased MT5 operation timeouts to 35s |
 | `/app/mt5_ea/AgentBridge_v6.mq5` | v6.1 with semicolon delimiter |
 
 ## User Action Required
@@ -108,28 +131,15 @@ WATCHLIST_THRESHOLD = 55 # Lowered from 60 - March 2026
 - MT5 file bridge for execution
 - Claude AI for headline sentiment
 
-## Files Modified
-- `/app/agents/orchestrator-agent/lifecycle.py`
-  - Lowered thresholds (68/55)
-  - Smart direction selection (picks highest confluence)
-  - Enhanced logging
-
-- `/app/agents/shared/order_bridge.py`
-  - Fixed CSV delimiter to semicolon (;)
-  - Removed header row (EA header parsing was buggy)
-  - Added debug logging for file paths and content
-
-- `/app/mt5_ea/AgentBridge_v6.mq5` (now v6.1)
-  - Fixed CSV delimiter to semicolon in all FileOpen calls
-  - Added logging for order processing
-  - User must recompile and redeploy
+## Pending Issues (Backlog)
+- P1: "Range Fade" strategy blocked by incorrect regime rules (needs `'trending'` added to allowed_regimes)
+- P2: Rebalance Tactician vs Confluence score weights
+- P2: Implement Chronicle reconciliation mechanism
+- P2: ATR-based trailing stops
+- P2: Multi-timeframe confluence weighting
 
 ## Testing Checklist
 - [ ] Score 68+ → Should execute
 - [ ] Multiple qualified strategies → Should pick highest confluence direction
 - [ ] Score history shows green circles for executed trades
-
-## Backlog
-- P2: ATR-based trailing stops
-- P2: Multi-timeframe confluence weighting
-- P2: Consider raising threshold to 70 if too many trades
+- [ ] Orchestrator-Executor timeouts resolved (no more "TIMEOUT calling executor/api/..." errors)

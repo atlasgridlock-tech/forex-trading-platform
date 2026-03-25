@@ -112,6 +112,7 @@ def check_order_result(order_id: str, timeout: float = 30.0) -> Optional[dict]:
     Returns result dict or None if still pending/timeout.
     
     NOTE: Uses semicolon (;) delimiter because MT5's FILE_CSV uses semicolon by default!
+    This function is resilient to malformed historical rows in the file.
     """
     start_time = time.time()
     check_count = 0
@@ -134,22 +135,29 @@ def check_order_result(order_id: str, timeout: float = 30.0) -> Optional[dict]:
                 with open(RESULTS_FILE, 'r', encoding='utf-8') as f:
                     reader = csv.DictReader(f, delimiter=';')
                     for row in reader:
-                        if row.get('OrderId') == order_id:
-                            result = {
-                                'order_id': order_id,
-                                'status': row.get('Status', 'UNKNOWN'),
-                                'message': row.get('Message', ''),
-                                'ticket': row.get('Ticket', ''),
-                                'time': row.get('Time', ''),
-                            }
-                            
-                            with order_lock:
-                                if order_id in pending_orders:
-                                    del pending_orders[order_id]
-                                completed_orders[order_id] = result
-                            
-                            print(f"[OrderBridge] ✅ Found result for {order_id}: {result}")
-                            return result
+                        try:
+                            # Try to match our order_id
+                            row_order_id = row.get('OrderId', '')
+                            if row_order_id == order_id:
+                                result = {
+                                    'order_id': order_id,
+                                    'status': row.get('Status', 'UNKNOWN'),
+                                    'message': row.get('Message', ''),
+                                    'ticket': row.get('Ticket', ''),
+                                    'time': row.get('Time', ''),
+                                }
+                                
+                                with order_lock:
+                                    if order_id in pending_orders:
+                                        del pending_orders[order_id]
+                                    completed_orders[order_id] = result
+                                
+                                print(f"[OrderBridge] ✅ Found result for {order_id}: {result}")
+                                return result
+                        except Exception as row_err:
+                            # Skip malformed rows from old/corrupted data
+                            # This allows us to find our result even if file has bad historical data
+                            pass
             except Exception as e:
                 print(f"[OrderBridge] Error reading results file: {e}")
         elif check_count % 20 == 0:  # Log every 10 seconds (20 * 0.5s)

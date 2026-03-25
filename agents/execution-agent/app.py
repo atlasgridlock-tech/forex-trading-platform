@@ -418,8 +418,31 @@ def write_mt5_command(command: dict) -> bool:
         return False
 
 
+async def read_mt5_result_async(command_id: str, timeout_seconds: int = 30) -> Optional[dict]:
+    """Read result from MT5 file bridge with timeout (async version - doesn't block event loop)."""
+    start_time = time.time()
+    
+    while time.time() - start_time < timeout_seconds:
+        try:
+            if MT5_RESULT_FILE.exists():
+                with open(MT5_RESULT_FILE, 'r') as f:
+                    result = json.load(f)
+                
+                # Check if this is our result
+                if result.get("command_id") == command_id:
+                    # Delete result file after reading
+                    MT5_RESULT_FILE.unlink()
+                    return result
+        except:
+            pass
+        
+        await asyncio.sleep(0.1)  # Async sleep - doesn't block event loop!
+    
+    return None
+
+
 def read_mt5_result(command_id: str, timeout_seconds: int = 30) -> Optional[dict]:
-    """Read result from MT5 file bridge with timeout."""
+    """Read result from MT5 file bridge with timeout (SYNC version - for backwards compat)."""
     start_time = time.time()
     
     while time.time() - start_time < timeout_seconds:
@@ -1124,7 +1147,8 @@ async def close_position(ticket: int):
     if not write_mt5_command(command):
         return {"status": "ERROR", "error": "Failed to write command"}
     
-    result = read_mt5_result(command_id, timeout_seconds=30)
+    # Use async version to not block other requests
+    result = await read_mt5_result_async(command_id, timeout_seconds=30)
     
     if result is None:
         return {"status": "TIMEOUT", "error": "MT5 did not respond"}
@@ -1162,7 +1186,8 @@ async def partial_close_position(request: PartialCloseRequest):
     if not write_mt5_command(command):
         return {"status": "ERROR", "error": "Failed to write command"}
     
-    result = read_mt5_result(command_id, timeout_seconds=30)
+    # Use async version to not block other requests
+    result = await read_mt5_result_async(command_id, timeout_seconds=30)
     
     if result is None:
         return {"status": "TIMEOUT", "error": "MT5 did not respond"}
@@ -1200,7 +1225,8 @@ async def modify_stop_loss(request: ModifySLRequest):
     if not write_mt5_command(command):
         return {"status": "ERROR", "error": "Failed to write command"}
     
-    result = read_mt5_result(command_id, timeout_seconds=30)
+    # Use async version to not block other requests
+    result = await read_mt5_result_async(command_id, timeout_seconds=30)
     
     if result is None:
         return {"status": "TIMEOUT", "error": "MT5 did not respond"}
@@ -1411,7 +1437,8 @@ async def place_pending_order(
     if not write_mt5_command(command):
         return {"status": "ERROR", "error": "Failed to write command"}
     
-    result = read_mt5_result(command_id, timeout_seconds=30)
+    # Use async version to not block other requests
+    result = await read_mt5_result_async(command_id, timeout_seconds=30)
     
     if result is None:
         return {"status": "TIMEOUT", "error": "MT5 did not respond"}
@@ -1452,7 +1479,8 @@ async def cancel_pending_order(ticket: int):
     if not write_mt5_command(command):
         return {"status": "ERROR", "error": "Failed to write command"}
     
-    result = read_mt5_result(command_id, timeout_seconds=30)
+    # Use async version to not block other requests
+    result = await read_mt5_result_async(command_id, timeout_seconds=30)
     
     if result is None:
         return {"status": "TIMEOUT", "error": "MT5 did not respond"}
