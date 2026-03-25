@@ -91,9 +91,9 @@ STRATEGY_TEMPLATES = {
     },
     "RANGE_FADE": {
         "name": "Range Fade",
-        "description": "Fade moves to range boundaries",
-        "allowed_regimes": ["range_bound", "mean_reverting"],
-        "invalid_regimes": ["trending", "breakout_ready", "high_vol_expansion", "unstable_noisy"],
+        "description": "Fade moves to range boundaries or pullbacks in trends",
+        "allowed_regimes": ["range_bound", "mean_reverting", "trending"],  # Added trending - fade pullbacks in trends
+        "invalid_regimes": ["breakout_ready", "high_vol_expansion", "unstable_noisy"],  # Removed trending
         "required_confluence": ["clear_range", "price_at_extreme", "rsi_divergence"],
         "max_spread_pips": 2.5,  # Relaxed from 1.5
         "min_atr_pct": 20,

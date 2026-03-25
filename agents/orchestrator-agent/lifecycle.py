@@ -274,11 +274,14 @@ class LifecycleManager:
                 
                 if not tracked:
                     # Add missing position to lifecycle tracking
-                    symbol = pos.get("symbol", "").replace(".s", "").replace(".S", "")
-                    direction = pos.get("direction", "long")
+                    symbol = pos.get("symbol", "").replace(".s", "").replace(".S", "").replace(".ecn", "").replace(".ECN", "")
+                    pos_type = pos.get("type", "").upper()
+                    direction = "long" if pos_type == "BUY" else "short" if pos_type == "SELL" else pos.get("direction", "long")
                     entry = pos.get("open_price", 0)
                     sl = pos.get("sl", 0)
                     tp = pos.get("tp", 0)
+                    volume = pos.get("volume", 0.01)
+                    profit = pos.get("profit", 0)
                     
                     # Calculate risk in pips for R calculation
                     risk_pips = abs(entry - sl) * 10000 if sl else 1
@@ -302,7 +305,7 @@ class LifecycleManager:
                         entry_price_actual=entry,
                         entry_time=datetime.utcnow(),
                         broker_ticket=ticket,
-                        position_size=pos.get("volume", 0.01),
+                        position_size=volume,
                         status=TradeStatus.ACTIVE,
                         current_price=pos.get("current_price", entry),
                         current_pnl_pips=0,
@@ -310,6 +313,32 @@ class LifecycleManager:
                     )
                     self.active_trades[trade.trade_id] = trade
                     print(f"🔄 Synced MT5 position: {symbol} {direction} (ticket: {ticket})")
+                    
+                    # Log synced position to Chronicle for visibility
+                    await self.post_agent("chronicle", "/api/trade/execute", {
+                        "trade_id": trade.trade_id,
+                        "symbol": symbol,
+                        "direction": direction,
+                        "entry_price": entry,
+                        "stop_loss": sl,
+                        "take_profit": tp,
+                        "lot_size": volume,
+                        "strategy": "SYNCED_FROM_MT5",
+                        "strategy_score": 0,
+                        "confluence_score": 0,
+                        "confluence_breakdown": {},
+                        "thesis": {
+                            "why_here": "Position synced from MT5",
+                            "why_now": f"Existing position (ticket: {ticket})",
+                            "why_direction": f"{direction.upper()} position",
+                            "invalidation": f"SL at {sl}" if sl else "No SL set",
+                        },
+                        "agent_verdicts": {},
+                        "broker_ticket": int(ticket) if ticket else 0,
+                        "entry_type": "synced",
+                        "timeframe": "H1",
+                        "current_pnl": profit,
+                    })
             
             # Remove trades that no longer exist in MT5
             to_remove = []

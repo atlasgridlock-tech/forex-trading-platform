@@ -25,6 +25,21 @@ A 15-agent autonomous forex trading system that analyzes market data, generates 
 
 **User Action**: Delete the old `order_results.csv` file one more time for a clean state.
 
+### P1: Range Fade Strategy Regime Rules (FIXED)
+**Root Cause**: The "Range Fade" strategy had `trending` in its `invalid_regimes` list, preventing it from working in trending markets where fading pullbacks is valid.
+
+**Fix Applied**:
+- `/app/agents/strategy-agent/app.py`: Added `'trending'` to `allowed_regimes` and removed from `invalid_regimes`
+
+### P1: Chronicle Not Showing Trades (FIXED)
+**Root Cause**: MT5 positions synced by the lifecycle manager weren't being logged to Chronicle.
+
+**Fix Applied**:
+- `/app/agents/orchestrator-agent/lifecycle.py`: Now logs synced positions to Chronicle via `/api/trade/execute`
+- `/app/agents/orchestrator-agent/app.py`: Added `/api/lifecycle/log-to-chronicle` endpoint to force re-log active trades
+
+**User Action**: After pulling latest code, call `POST http://localhost:3020/api/lifecycle/log-to-chronicle` to log existing positions.
+
 ## Critical Bug Fixes - March 2026
 
 ### 1. MT5 OrderBridge CSV Delimiter Mismatch (P0 FIXED)
@@ -132,7 +147,6 @@ WATCHLIST_THRESHOLD = 55 # Lowered from 60 - March 2026
 - Claude AI for headline sentiment
 
 ## Pending Issues (Backlog)
-- P1: "Range Fade" strategy blocked by incorrect regime rules (needs `'trending'` added to allowed_regimes)
 - P2: Rebalance Tactician vs Confluence score weights
 - P2: Implement Chronicle reconciliation mechanism
 - P2: ATR-based trailing stops

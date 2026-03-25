@@ -2074,6 +2074,47 @@ async def sync_with_mt5():
     }
 
 
+@app.post("/api/lifecycle/log-to-chronicle")
+async def log_active_trades_to_chronicle():
+    """Force log all active trades to Chronicle (useful after restart)."""
+    logged = []
+    for trade_id, trade in lifecycle_manager.active_trades.items():
+        try:
+            await lifecycle_manager.post_agent("chronicle", "/api/trade/execute", {
+                "trade_id": trade_id,
+                "symbol": trade.setup.symbol,
+                "direction": trade.setup.direction,
+                "entry_price": trade.entry_price_actual,
+                "stop_loss": trade.setup.stop_loss,
+                "take_profit": trade.setup.take_profit_1,
+                "lot_size": trade.position_size,
+                "strategy": trade.setup.template,
+                "strategy_score": 0,
+                "confluence_score": 0,
+                "confluence_breakdown": {},
+                "thesis": {
+                    "why_here": trade.setup.entry_trigger or "Synced from MT5",
+                    "why_now": f"Active position (ticket: {trade.broker_ticket})",
+                    "why_direction": f"{trade.setup.direction.upper()} position",
+                    "invalidation": f"SL at {trade.setup.stop_loss}" if trade.setup.stop_loss else "No SL set",
+                },
+                "agent_verdicts": {},
+                "broker_ticket": trade.broker_ticket or 0,
+                "entry_type": "synced",
+                "timeframe": "H1",
+                "current_pnl": 0,
+            })
+            logged.append(trade_id)
+            print(f"[Lifecycle] Logged {trade_id} to Chronicle")
+        except Exception as e:
+            print(f"[Lifecycle] Error logging {trade_id} to Chronicle: {e}")
+    
+    return {
+        "logged_count": len(logged),
+        "logged_trades": logged,
+    }
+
+
 @app.get("/api/templates")
 async def get_strategy_templates():
     """Get available strategy templates and their requirements."""
