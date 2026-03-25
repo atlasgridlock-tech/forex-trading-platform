@@ -494,9 +494,12 @@ def execute_live_order(order: OrderRequest) -> dict:
         
         # Execute via order bridge
         start_time = time.time()
+        # Convert direction to action (long->BUY, short->SELL)
+        action = "BUY" if order.direction.lower() in ["long", "buy"] else "SELL"
+        print(f"[Executor] Submitting to OrderBridge: {action} {order.symbol} {order.lot_size} lots, SL={order.stop_loss}")
         result = execute_and_wait(
             symbol=order.symbol,  # Bridge will handle symbol mapping
-            action=order.direction,
+            action=action,
             volume=order.lot_size,
             sl=order.stop_loss,
             tp=0,  # Lifecycle handles TPs
@@ -504,6 +507,7 @@ def execute_live_order(order: OrderRequest) -> dict:
             timeout=30.0
         )
         latency_ms = int((time.time() - start_time) * 1000)
+        print(f"[Executor] OrderBridge response after {latency_ms}ms: {result}")
         
         if result.get("status") == "FILLED":
             receipt = {
