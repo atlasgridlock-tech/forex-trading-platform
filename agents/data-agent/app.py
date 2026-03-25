@@ -62,7 +62,7 @@ print(f"[Curator] MT5 data path: {MT5_DATA_PATH}")
 CANDLE_FILE = MT5_DATA_PATH / "candle_data.csv"
 MARKET_FILE = MT5_DATA_PATH / "market_data.csv"
 ACCOUNT_FILE = MT5_DATA_PATH / "account_data.csv"  # Changed to CSV to match EA output
-POSITIONS_FILE = MT5_DATA_PATH / "positions.json"
+POSITIONS_FILE = MT5_DATA_PATH / "positions.csv"  # EA writes CSV, not JSON
 BRIDGE_STATUS_FILE = MT5_DATA_PATH / "bridge_status.json"
 
 # Symbols and timeframes
@@ -1205,13 +1205,38 @@ async def get_account():
 
 @app.get("/api/positions")
 async def get_positions():
-    """Get open positions from MT5."""
+    """Get open positions from MT5 CSV file.
+    
+    EA writes positions.csv with semicolon delimiter.
+    """
     try:
         if POSITIONS_FILE.exists():
-            with open(POSITIONS_FILE, 'r') as f:
-                return json.load(f)
+            positions = []
+            with open(POSITIONS_FILE, 'r', encoding='utf-8') as f:
+                # EA uses semicolon delimiter
+                reader = csv.DictReader(f, delimiter=';')
+                for row in reader:
+                    try:
+                        positions.append({
+                            'ticket': row.get('Ticket', ''),
+                            'symbol': row.get('Symbol', ''),
+                            'type': row.get('Type', ''),  # BUY or SELL
+                            'volume': float(row.get('Volume', 0)),
+                            'open_price': float(row.get('OpenPrice', 0)),
+                            'sl': float(row.get('SL', 0)),
+                            'tp': float(row.get('TP', 0)),
+                            'profit': float(row.get('Profit', 0)),
+                            'open_time': row.get('OpenTime', ''),
+                            'magic': row.get('Magic', ''),
+                            'comment': row.get('Comment', ''),
+                        })
+                    except (ValueError, TypeError) as e:
+                        print(f"[Curator] Error parsing position row: {e}")
+                        continue
+            return {"count": len(positions), "positions": positions}
     except Exception as e:
-        return {"error": str(e)}
+        print(f"[Curator] Error reading positions: {e}")
+        return {"error": str(e), "count": 0, "positions": []}
     return {"error": "Positions file not found", "count": 0, "positions": []}
 
 

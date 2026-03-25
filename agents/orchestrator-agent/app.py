@@ -1104,9 +1104,12 @@ async def fetch_dashboard_data():
     if positions_data:
         raw_positions = positions_data.get("positions", [])
         for pos in raw_positions:
+            # EA writes 'type' as BUY/SELL, map to side display
+            pos_type = pos.get("type", "").upper()
+            side = "LONG" if pos_type == "BUY" else "SHORT" if pos_type == "SELL" else pos_type
             positions.append({
                 "symbol": pos.get("symbol", "?"),
-                "side": pos.get("direction", "long").upper(),  # "short" -> "SHORT", "long" -> "LONG"
+                "side": side,
                 "lots": pos.get("volume", 0),
                 "entry": pos.get("open_price", 0),
                 "sl": pos.get("sl", 0),
