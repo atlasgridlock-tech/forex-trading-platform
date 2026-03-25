@@ -104,14 +104,14 @@ A 15-agent autonomous forex trading system that analyzes market data, generates 
 
 ### Execution Thresholds
 ```python
-EXECUTE_THRESHOLD = 68   # Lowered from 75 - March 2026
-WATCHLIST_THRESHOLD = 55 # Lowered from 60 - March 2026
+EXECUTE_THRESHOLD = 68   # Now achievable with strategy score included
+WATCHLIST_THRESHOLD = 55 
 ```
 
-### Why Changed:
-- Max achievable confluence score is ~86, not 100
-- 75 threshold was too restrictive - many good setups scoring 68-74
-- System was picking wrong direction (first qualified vs highest confluence)
+### Why Changed (December 2025):
+- Max achievable confluence score is now 100 (was ~86)
+- Strategy score from Tactician is now 25% of confluence (fixes score imbalance)
+- 68 threshold is reasonable for quality trades
 
 ## Key Bug Fixes (March 2026)
 
@@ -128,16 +128,19 @@ WATCHLIST_THRESHOLD = 55 # Lowered from 60 - March 2026
 **Problem:** `post_agent` swallowed all errors with bare `except: pass`
 **Fix:** Added comprehensive error logging
 
-## Confluence Scoring (Max ~86)
-| Component | Max Score |
-|-----------|-----------|
-| Technical | 25 |
-| Structure | 15 |
-| Macro | 15 |
-| Sentiment | 10 |
-| Regime | 10 |
-| Risk/Execution | 11 |
-| **TOTAL** | **~86** |
+## Confluence Scoring (Max 100 - NOW INCLUDES STRATEGY!)
+| Component | Weight | Max Score |
+|-----------|--------|-----------|
+| **Strategy (NEW)** | **25%** | **25** |
+| Technical | 20% | 20 |
+| Structure | 15% | 15 |
+| Macro | 12% | 12 |
+| Sentiment | 8% | 8 |
+| Regime | 10% | 10 |
+| Risk/Execution | 10% | 10 |
+| **TOTAL** | **100%** | **100** |
+
+**Key Change**: Strategy score from Tactician is now the largest component (25%), fixing the imbalance where a Tactician score of 100 could result in confluence of only 54.
 
 ## Core Architecture
 - 15+ Python FastAPI microservices
@@ -147,10 +150,9 @@ WATCHLIST_THRESHOLD = 55 # Lowered from 60 - March 2026
 - Claude AI for headline sentiment
 
 ## Pending Issues (Backlog)
-- P2: Rebalance Tactician vs Confluence score weights
-- P2: Implement Chronicle reconciliation mechanism
 - P2: ATR-based trailing stops
 - P2: Multi-timeframe confluence weighting
+- P2: Implement Chronicle reconciliation mechanism
 
 ## Testing Checklist
 - [ ] Score 68+ → Should execute

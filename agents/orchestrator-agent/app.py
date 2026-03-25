@@ -101,12 +101,13 @@ class TradeCandidate(BaseModel):
 # Configuration (could be loaded from file)
 CONFIG = {
     "confluence_weights": {
-        "technical": 0.25,
-        "structure": 0.20,
-        "macro": 0.15,
-        "sentiment": 0.10,
-        "regime": 0.15,
-        "risk_execution": 0.15,
+        "technical": 0.20,    # Reduced from 0.25 to make room for strategy
+        "structure": 0.15,    # Reduced from 0.20
+        "macro": 0.12,        # Reduced from 0.15
+        "sentiment": 0.08,    # Reduced from 0.10
+        "regime": 0.10,       # Reduced from 0.15
+        "risk_execution": 0.10,  # Reduced from 0.15
+        "strategy": 0.25,     # NEW: Tactician strategy score (most important!)
     },
     "decision_thresholds": {
         "execute": 55,      # Lowered to match realistic confluence scores
@@ -561,10 +562,51 @@ async def calculate_confluence_score(symbol: str, direction: str, strategy: str,
     scores = {}
     weights = CONFIG["confluence_weights"]
     
-    # 1. Technical Alignment (25%) - from Atlas Jr.
+    # 0. Strategy Score (25%) - from Tactician (MOST IMPORTANT!)
+    # Strip broker suffix for Tactician
+    clean_symbol = symbol.replace(".s", "").replace(".S", "").replace(".ecn", "").replace(".ECN", "")
+    tactician_data = await fetch_agent_data("tactician", f"/api/setups/{clean_symbol}")
+    strat_score = 0
+    strat_max = 25
+    strat_details = []
+    
+    if tactician_data:
+        # Look for our strategy/direction in qualified setups
+        setups = tactician_data.get("qualified_setups", [])
+        all_setups = tactician_data.get("all_setups", [])
+        best_match_score = 0
+        
+        for setup in setups + all_setups:
+            setup_direction = setup.get("direction", "")
+            setup_strategy = setup.get("strategy", setup.get("name", ""))
+            
+            # Match by direction first
+            if setup_direction.lower() == direction.lower():
+                setup_score = setup.get("score", 0)
+                if setup_score > best_match_score:
+                    best_match_score = setup_score
+                    strat_details = [f"{setup_strategy}: {setup_score}"]
+        
+        # Convert Tactician score (0-100) to our scale (0-25)
+        strat_score = int(best_match_score * 0.25)
+        
+        if not strat_details:
+            strat_details.append(f"No {direction} setup found")
+    else:
+        strat_score = 12  # Default to moderate if no data
+        strat_details.append("No Tactician data")
+    
+    scores["strategy"] = {
+        "score": min(strat_score, strat_max),
+        "max": strat_max,
+        "weight": weights.get("strategy", 0.25),
+        "details": ", ".join(strat_details),
+    }
+    
+    # 1. Technical Alignment (20%) - from Atlas Jr.
     technical_data = await fetch_agent_data("atlas", f"/api/analysis/{symbol}")
     tech_score = 0
-    tech_max = 25
+    tech_max = 20  # Reduced from 25
     tech_details = []
     
     if technical_data:
@@ -605,12 +647,12 @@ async def calculate_confluence_score(symbol: str, direction: str, strategy: str,
         "details": ", ".join(tech_details),
     }
     
-    # 2. Market Structure (20%) - from Architect
+    # 2. Market Structure (15%) - from Architect
     # Strip broker suffix for Architect (stores without suffix)
-    clean_symbol = symbol.replace(".s", "").replace(".S", "")
+    clean_symbol = symbol.replace(".s", "").replace(".S", "").replace(".ecn", "").replace(".ECN", "")
     structure_data = await fetch_agent_data("architect", f"/api/structure/{clean_symbol}")
     struct_score = 0
-    struct_max = 20
+    struct_max = 15  # Reduced from 20
     struct_details = []
     
     if structure_data:
@@ -683,11 +725,11 @@ async def calculate_confluence_score(symbol: str, direction: str, strategy: str,
         "details": ", ".join(struct_details),
     }
     
-    # 3. Macro Alignment (15%) - from Oracle
+    # 3. Macro Alignment (12%) - from Oracle
     # Oracle uses /api/pair/{symbol} endpoint, not /api/outlook
     macro_data = await fetch_agent_data("oracle", f"/api/pair/{symbol}")
     macro_score = 0
-    macro_max = 15
+    macro_max = 12  # Reduced from 15
     macro_details = []
     
     if macro_data:
@@ -697,16 +739,16 @@ async def calculate_confluence_score(symbol: str, direction: str, strategy: str,
         
         if (direction == "long" and macro_bias == "bullish") or \
            (direction == "short" and macro_bias == "bearish"):
-            macro_score += 10 + int(confidence / 20)  # Up to 15
+            macro_score += 8 + int(confidence / 25)  # Up to 12
             macro_details.append(f"Macro {macro_bias} ({confidence}% conf)")
         elif macro_bias == "neutral":
-            macro_score += 7
+            macro_score += 6
             macro_details.append("Macro neutral")
         else:
-            macro_score += 3
+            macro_score += 2
             macro_details.append(f"Macro counter ({macro_bias})")
     else:
-        macro_score = 7
+        macro_score = 6
         macro_details.append("No data (default)")
     
     scores["macro"] = {
@@ -716,10 +758,10 @@ async def calculate_confluence_score(symbol: str, direction: str, strategy: str,
         "details": ", ".join(macro_details),
     }
     
-    # 4. Sentiment/Positioning (10%) - from Pulse
+    # 4. Sentiment/Positioning (8%) - from Pulse
     sentiment_data = await fetch_agent_data("pulse", f"/api/sentiment/{symbol}")
     sent_score = 0
-    sent_max = 10
+    sent_max = 8  # Reduced from 10
     sent_details = []
     
     if sentiment_data:
@@ -728,19 +770,19 @@ async def calculate_confluence_score(symbol: str, direction: str, strategy: str,
         long_pct = retail.get("long_pct", 50)
         
         if classification == "trend_supportive":
-            sent_score += 8
+            sent_score += 6
             sent_details.append(f"Trend supportive ({long_pct}% retail long)")
         elif classification == "contrarian_opportunity":
-            sent_score += 10  # Contrarian is great
+            sent_score += 8  # Contrarian is great
             sent_details.append(f"Contrarian opportunity! ({long_pct}% retail)")
         elif classification == "overcrowded":
             sent_score += 2  # Penalty
             sent_details.append(f"OVERCROWDED ({long_pct}% retail long)")
         else:
-            sent_score += 5
+            sent_score += 4
             sent_details.append(f"Neutral ({long_pct}% retail long)")
     else:
-        sent_score = 5
+        sent_score = 4
         sent_details.append("No data (default)")
     
     scores["sentiment"] = {
@@ -750,10 +792,10 @@ async def calculate_confluence_score(symbol: str, direction: str, strategy: str,
         "details": ", ".join(sent_details),
     }
     
-    # 5. Regime Suitability (15%) - from Compass
+    # 5. Regime Suitability (10%) - from Compass
     regime_data = await fetch_agent_data("compass", f"/api/regime/{symbol}")
     regime_score = 0
-    regime_max = 15
+    regime_max = 10  # Reduced from 15
     regime_details = []
     
     if regime_data:
@@ -765,21 +807,21 @@ async def calculate_confluence_score(symbol: str, direction: str, strategy: str,
         # Strategy compatibility
         strategy_base = strategy.split("-")[0].upper() if strategy else ""
         if any(s.upper() in strategy_base or strategy_base in s.upper() for s in compatible):
-            regime_score += 10
+            regime_score += 7
             regime_details.append(f"Strategy fits {regime}")
         else:
-            regime_score += 3
+            regime_score += 2
             regime_details.append(f"Strategy marginal for {regime}")
         
         # Stability bonus
         if transition_prob < 0.3:
-            regime_score += 5
+            regime_score += 3
             regime_details.append("Stable regime")
         elif transition_prob < 0.5:
-            regime_score += 3
+            regime_score += 2
             regime_details.append("Moderately stable")
     else:
-        regime_score = 8
+        regime_score = 5
         regime_details.append("No data (default)")
     
     scores["regime"] = {
@@ -789,22 +831,22 @@ async def calculate_confluence_score(symbol: str, direction: str, strategy: str,
         "details": ", ".join(regime_details),
     }
     
-    # 6. Risk & Execution (15%) - from Guardian + Executor
+    # 6. Risk & Execution (10%) - from Guardian + Executor
     risk_score = 0
-    risk_max = 15
+    risk_max = 10  # Reduced from 15
     risk_details = []
     
     guardian_data = await fetch_agent_data("guardian", "/api/status")
     if guardian_data:
         risk_mode = guardian_data.get("mode", "normal")
         if risk_mode == "normal":
-            risk_score += 8
+            risk_score += 5
             risk_details.append("Risk normal")
         elif risk_mode == "reduced":
-            risk_score += 5
+            risk_score += 3
             risk_details.append("Risk reduced")
         elif risk_mode == "defensive":
-            risk_score += 3
+            risk_score += 2
             risk_details.append("Risk defensive")
     
     executor_data = await fetch_agent_data("executor", "/api/status")
@@ -812,13 +854,13 @@ async def calculate_confluence_score(symbol: str, direction: str, strategy: str,
         exec_mode = executor_data.get("mode", "paper")
         bridge_status = executor_data.get("bridge_status", "unknown")
         if bridge_status == "READY":
-            risk_score += 7
+            risk_score += 5
             risk_details.append("Execution ready")
         else:
-            risk_score += 3
+            risk_score += 2
             risk_details.append(f"Bridge: {bridge_status}")
     else:
-        risk_score += 5
+        risk_score += 3
         risk_details.append("Executor status unknown")
     
     scores["risk_execution"] = {
@@ -828,7 +870,7 @@ async def calculate_confluence_score(symbol: str, direction: str, strategy: str,
         "details": ", ".join(risk_details),
     }
     
-    # Calculate total score
+    # Calculate total score (now includes strategy component)
     total_score = sum(s["score"] for s in scores.values())
     
     return total_score, scores
