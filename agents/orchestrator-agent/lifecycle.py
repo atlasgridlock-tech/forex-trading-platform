@@ -855,14 +855,14 @@ class LifecycleManager:
                 if resp.status_code == 200:
                     config = resp.json()
                     thresholds = config.get("decision_thresholds", {})
-                    EXECUTE_THRESHOLD = thresholds.get("execute", 55)
-                    WATCHLIST_THRESHOLD = thresholds.get("watchlist", 45)
+                    EXECUTE_THRESHOLD = thresholds.get("execute", 75)
+                    WATCHLIST_THRESHOLD = thresholds.get("watchlist", 60)
                 else:
-                    EXECUTE_THRESHOLD = 55
-                    WATCHLIST_THRESHOLD = 45
+                    EXECUTE_THRESHOLD = 75
+                    WATCHLIST_THRESHOLD = 60
         except:
-            EXECUTE_THRESHOLD = 55
-            WATCHLIST_THRESHOLD = 45
+            EXECUTE_THRESHOLD = 75
+            WATCHLIST_THRESHOLD = 60
         
         # Determine decision type based on score
         score_decision = "NO_TRADE"
@@ -1220,11 +1220,11 @@ class LifecycleManager:
                 "reason": exit_reason.value,
             }, timeout=35.0)  # MT5 bridge can take up to 30s
             
-            # Log to chronicle
+            # Log to chronicle - use correct field names
             await self.post_agent("chronicle", "/api/trade/close", {
                 "trade_id": trade.setup.setup_id,
-                "close_price": trade.exit_price,
-                "close_reason": exit_reason.value,
+                "exit_price": trade.exit_price,
+                "exit_reason": exit_reason.value,
             })
             
             self.log_stage(LifecycleStage.EXIT_MANAGEMENT, trade.setup.symbol, {

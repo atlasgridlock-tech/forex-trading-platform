@@ -110,8 +110,8 @@ CONFIG = {
         "strategy": 0.25,     # NEW: Tactician strategy score (most important!)
     },
     "decision_thresholds": {
-        "execute": 55,      # Lowered to match realistic confluence scores
-        "watchlist": 45,    # Lowered accordingly
+        "execute": 75,      # Raised back to 75 (now achievable with strategy in confluence)
+        "watchlist": 60,    # Raised back to 60
         "no_trade": 30,
     },
     "hard_gates": {

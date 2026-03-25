@@ -104,14 +104,14 @@ A 15-agent autonomous forex trading system that analyzes market data, generates 
 
 ### Execution Thresholds
 ```python
-EXECUTE_THRESHOLD = 68   # Now achievable with strategy score included
-WATCHLIST_THRESHOLD = 55 
+EXECUTE_THRESHOLD = 75   # Raised back (now achievable with strategy in confluence)
+WATCHLIST_THRESHOLD = 60 
 ```
 
 ### Why Changed (December 2025):
 - Max achievable confluence score is now 100 (was ~86)
 - Strategy score from Tactician is now 25% of confluence (fixes score imbalance)
-- 68 threshold is reasonable for quality trades
+- 75 threshold ensures only high-conviction trades execute
 
 ## Key Bug Fixes (March 2026)
 

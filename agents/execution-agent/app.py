@@ -1127,9 +1127,15 @@ async def get_bridge_status():
     }
 
 
+class ClosePositionRequest(BaseModel):
+    ticket: int
+    reason: str = ""
+
+
 @app.post("/api/close")
-async def close_position(ticket: int):
+async def close_position(request: ClosePositionRequest):
     """Close a position via MT5 bridge."""
+    ticket = request.ticket
     if execution_mode != ExecutionMode.GUARDED_LIVE:
         return {"status": "ERROR", "error": "Close only available in guarded_live mode"}
     
