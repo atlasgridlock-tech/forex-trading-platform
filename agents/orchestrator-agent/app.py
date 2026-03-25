@@ -571,27 +571,45 @@ async def calculate_confluence_score(symbol: str, direction: str, strategy: str,
     strat_details = []
     
     if tactician_data:
-        # Look for our strategy/direction in qualified setups
-        setups = tactician_data.get("qualified_setups", [])
-        all_setups = tactician_data.get("all_setups", [])
+        # Tactician returns "setups" array with qualified setups
+        setups = tactician_data.get("setups", [])
         best_match_score = 0
+        best_match_name = ""
         
-        for setup in setups + all_setups:
+        # Debug: Log what we received
+        if log_inputs:
+            print(f"   [DEBUG] Tactician returned {len(setups)} setups for {clean_symbol}")
+            for s in setups:
+                print(f"   [DEBUG]   - {s.get('name')}: {s.get('direction')} @ {s.get('score')}")
+        
+        for setup in setups:
             setup_direction = setup.get("direction", "")
-            setup_strategy = setup.get("strategy", setup.get("name", ""))
+            setup_name = setup.get("name", setup.get("template", ""))
+            setup_score = setup.get("score", 0)
             
-            # Match by direction first
-            if setup_direction.lower() == direction.lower():
-                setup_score = setup.get("score", 0)
+            # Match by direction (case-insensitive, handle 'short' vs 'bearish')
+            dir_match = (
+                setup_direction.lower() == direction.lower() or
+                (direction.lower() == "short" and setup_direction.lower() == "bearish") or
+                (direction.lower() == "long" and setup_direction.lower() == "bullish") or
+                (direction.lower() == "bearish" and setup_direction.lower() == "short") or
+                (direction.lower() == "bullish" and setup_direction.lower() == "long")
+            )
+            
+            if dir_match:
                 if setup_score > best_match_score:
                     best_match_score = setup_score
-                    strat_details = [f"{setup_strategy}: {setup_score}"]
+                    best_match_name = setup_name
         
         # Convert Tactician score (0-100) to our scale (0-25)
         strat_score = int(best_match_score * 0.25)
         
-        if not strat_details:
-            strat_details.append(f"No {direction} setup found")
+        if best_match_name:
+            strat_details.append(f"{best_match_name}: {best_match_score}")
+        else:
+            # No match - list what directions are available
+            available_dirs = list(set(s.get("direction", "?") for s in setups))
+            strat_details.append(f"No {direction} setup (have: {available_dirs})")
     else:
         strat_score = 12  # Default to moderate if no data
         strat_details.append("No Tactician data")
