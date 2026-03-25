@@ -3,27 +3,66 @@
 ## Overview
 A 15-agent autonomous forex trading system that analyzes market data, generates trade setups, and executes trades based on confluence scoring.
 
-## Critical Bug Fix - December 2025
+## Critical Bug Fixes - March 2026
 
-### MT5 OrderBridge CSV Delimiter Mismatch (P0 FIXED)
-**Root Cause**: Python was writing CSV with tab delimiter, but MT5's FILE_CSV reads with semicolon delimiter by default. This caused the EA to misparse order data.
+### 1. MT5 OrderBridge CSV Delimiter Mismatch (P0 FIXED)
+**Root Cause**: Python was writing CSV with tab delimiter, but MT5's FILE_CSV reads with semicolon delimiter by default.
 
 **Fix Applied**:
-1. `order_bridge.py`: Now writes with semicolon (`;`) delimiter
-2. `order_bridge.py`: Removed header row (EA's header skip was buggy)
-3. `AgentBridge_v6.mq5` (now v6.1): Explicitly uses semicolon delimiter in all FileOpen calls
-4. Added extensive debug logging to trace file paths and content
+- `order_bridge.py`: Uses semicolon (`;`) delimiter, no header row
+- `AgentBridge_v6.mq5` (v6.1): Uses semicolon delimiter in all FileOpen calls
 
-**Files Changed**:
-- `/app/agents/shared/order_bridge.py`
-- `/app/mt5_ea/AgentBridge_v6.mq5`
+**User Action**: Recompile EA, delete old `order_results.csv`
 
-**User Action Required**: 
-- Recompile AgentBridge_v6.mq5 in MetaEditor
-- Attach the new EA to a chart in MT5
-- Verify the EA shows "v6.1" in the Experts tab
+### 2. Dashboard Not Showing Positions (FIXED)
+**Root Cause**: Curator and Executor were reading `positions.json` but EA writes `positions.csv` with semicolon delimiter.
 
-## Critical Parameters (March 2026 Update)
+**Fix Applied**:
+- `/app/agents/data-agent/app.py`: Reads `positions.csv` with semicolon delimiter
+- `/app/agents/execution-agent/app.py`: Reads `positions.csv` with semicolon delimiter
+- `/app/agents/orchestrator-agent/app.py`: Maps EA's `type` (BUY/SELL) to dashboard's `side` (LONG/SHORT)
+
+### 3. Executor Shows "?? @ ?" (FIXED)
+**Root Cause**: Timeout/error receipts didn't include symbol and direction.
+
+**Fix Applied**:
+- Executor now includes order details even on timeout/failure for display
+
+### 4. Inconsistent MT5 Path Environment Variable (FIXED)
+**Root Cause**: Different agents used different env vars (`MT5_DATA_PATH` vs `MT5_FILES_PATH`).
+
+**Fix Applied**:
+- Executor now checks both env vars for compatibility
+
+## Files Modified This Session
+| File | Changes |
+|------|---------|
+| `/app/agents/shared/order_bridge.py` | Semicolon delimiter, no header, debug logging |
+| `/app/agents/data-agent/app.py` | Read positions.csv with semicolon delimiter |
+| `/app/agents/execution-agent/app.py` | Read positions.csv, include order details on timeout |
+| `/app/agents/orchestrator-agent/app.py` | Map BUY/SELL to LONG/SHORT for display |
+| `/app/mt5_ea/AgentBridge_v6.mq5` | v6.1 with semicolon delimiter |
+
+## User Action Required
+1. **Delete corrupted results file**:
+   ```bash
+   rm "/Users/triad/Library/Application Support/net.metaquotes.wine.metatrader5/drive_c/users/user/AppData/Roaming/MetaQuotes/Terminal/Common/Files/order_results.csv"
+   ```
+
+2. **Pull latest code** (Save to Github, then git pull locally)
+
+3. **Recompile EA** (if not already done):
+   - Open AgentBridge_v6.mq5 in MetaEditor
+   - Press F7 to compile
+   - Attach to chart, verify "v6.1" shows
+
+4. **Restart local agents**:
+   ```bash
+   pkill -f "python.*start_agents"
+   python start_agents.py
+   ```
+
+## Critical Parameters
 
 ### Execution Thresholds
 ```python

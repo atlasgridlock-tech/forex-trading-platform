@@ -43,11 +43,13 @@ GUARDIAN_URL = get_agent_url("guardian")
 PORTFOLIO_URL = get_agent_url("balancer")
 ORCHESTRATOR_URL = get_agent_url("orchestrator")
 
-# MT5 File Bridge paths
-MT5_FILES_PATH = Path(os.getenv("MT5_FILES_PATH", "/mt5files"))
+# MT5 File Bridge paths - use same env var as order_bridge
+MT5_FILES_PATH = Path(os.getenv("MT5_DATA_PATH", os.getenv("MT5_FILES_PATH", "/mt5files")))
 MT5_COMMAND_FILE = MT5_FILES_PATH / "trade_commands.json"
 MT5_RESULT_FILE = MT5_FILES_PATH / "trade_results.json"
 MT5_STATUS_FILE = MT5_FILES_PATH / "bridge_status.json"
+
+print(f"[Executor] MT5_FILES_PATH: {MT5_FILES_PATH}")
 
 # Broker symbol configuration (using shared module)
 
@@ -451,12 +453,38 @@ def check_mt5_bridge_status() -> dict:
 
 
 def read_mt5_positions() -> Optional[dict]:
-    """Read positions and pending orders from MT5."""
+    """Read positions and pending orders from MT5 CSV file.
+    
+    EA writes positions.csv with semicolon delimiter.
+    """
+    import csv
     try:
-        positions_file = MT5_FILES_PATH / "positions.json"
+        positions_file = MT5_FILES_PATH / "positions.csv"
         if positions_file.exists():
-            with open(positions_file, 'r') as f:
-                return json.load(f)
+            positions = []
+            with open(positions_file, 'r', encoding='utf-8') as f:
+                # EA uses semicolon delimiter
+                reader = csv.DictReader(f, delimiter=';')
+                for row in reader:
+                    try:
+                        positions.append({
+                            'ticket': row.get('Ticket', ''),
+                            'symbol': row.get('Symbol', ''),
+                            'type': row.get('Type', ''),  # BUY or SELL
+                            'direction': 'long' if row.get('Type', '').upper() == 'BUY' else 'short',
+                            'volume': float(row.get('Volume', 0)),
+                            'open_price': float(row.get('OpenPrice', 0)),
+                            'sl': float(row.get('SL', 0)),
+                            'tp': float(row.get('TP', 0)),
+                            'profit': float(row.get('Profit', 0)),
+                            'open_time': row.get('OpenTime', ''),
+                            'magic': row.get('Magic', ''),
+                            'comment': row.get('Comment', ''),
+                        })
+                    except (ValueError, TypeError) as e:
+                        print(f"[Executor] Error parsing position row: {e}")
+                        continue
+            return {"count": len(positions), "positions": positions}
     except Exception as e:
         print(f"[Executor] Error reading positions: {e}")
     return None
@@ -535,8 +563,12 @@ def execute_live_order(order: OrderRequest) -> dict:
             print(f"[Executor] ✅ LIVE ORDER FILLED: {order.direction} {order.symbol} {order.lot_size} lots")
             return receipt
         else:
+            # Include order details even on failure for display
             return {
                 "order_id": result.get("order_id"),
+                "symbol": order.symbol,
+                "direction": order.direction,
+                "lot_size": order.lot_size,
                 "status": result.get("status", "ERROR"),
                 "error": result.get("message", "Order not filled"),
                 "mode": "guarded_live",
