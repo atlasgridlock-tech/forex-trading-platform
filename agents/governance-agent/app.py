@@ -747,6 +747,31 @@ async def get_changelog():
     return {"changelog": "No changelog yet"}
 
 
+@app.post("/api/recommendations")
+async def receive_recommendations(request: dict):
+    """
+    Receive strategy improvement recommendations from the lifecycle manager.
+    These are logged for review and potential action.
+    """
+    recommendations = request.get("recommendations", [])
+    trade_count = request.get("trade_count", 0)
+    
+    if recommendations:
+        print(f"[Arbiter] Received {len(recommendations)} recommendations from {trade_count} trades:")
+        for rec in recommendations:
+            template = rec.get("template", "?")
+            issue = rec.get("issue", "?")
+            value = rec.get("value", 0)
+            suggestion = rec.get("suggestion", "")
+            print(f"   [{template}] {issue}: {value:.1%} - {suggestion}")
+    
+    return {
+        "status": "received",
+        "recommendations_count": len(recommendations),
+        "message": "Logged for review",
+    }
+
+
 @app.get("/api/status")
 async def get_status():
     total_versions = sum(len(v) for v in versions.values())

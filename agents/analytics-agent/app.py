@@ -682,6 +682,27 @@ async def get_costs(days: int = 30):
     return analytics.get("cost_analysis", {})
 
 
+@app.post("/api/attribution")
+async def receive_attribution(request: dict):
+    """
+    Receive trade attribution data from the lifecycle manager.
+    Used for performance tracking and analysis.
+    """
+    trade_id = request.get("trade_id", "?")
+    symbol = request.get("symbol", "?")
+    result_r = request.get("result_r", 0)
+    strategy = request.get("strategy", "?")
+    
+    print(f"[Insight] Attribution: {trade_id} | {symbol} | {strategy} | {result_r:+.2f}R")
+    
+    # Store for analytics (in-memory for now)
+    # Future: persist to database
+    return {
+        "status": "received",
+        "trade_id": trade_id,
+    }
+
+
 @app.get("/api/status")
 async def get_status():
     analytics = await compute_full_analytics(30)

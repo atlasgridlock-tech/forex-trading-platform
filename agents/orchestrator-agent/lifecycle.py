@@ -551,8 +551,8 @@ class LifecycleManager:
         structure = await self.fetch_agent("architect", f"/api/structure/{symbol}")
         analysis["structure"] = structure or {}
         
-        # Macro (Oracle)
-        macro = await self.fetch_agent("oracle", f"/api/outlook/{symbol}")
+        # Macro (Oracle) - uses /api/pair not /api/outlook
+        macro = await self.fetch_agent("oracle", f"/api/pair/{symbol}")
         analysis["macro"] = macro or {}
         
         # Sentiment (Pulse)
@@ -707,7 +707,8 @@ class LifecycleManager:
     
     async def stage_portfolio_screening(self, setup: TradeSetup) -> Tuple[bool, dict]:
         """Screen setup through Balancer."""
-        result = await self.post_agent("balancer", "/api/check", {
+        # Use /api/evaluate endpoint (not /api/check)
+        result = await self.post_agent("balancer", "/api/evaluate", {
             "symbol": setup.symbol,
             "direction": setup.direction,
             "size": 1.0,  # Normalized
@@ -723,7 +724,7 @@ class LifecycleManager:
             }
         else:
             exposure_ok = True  # Default to pass if unavailable
-            screening = {"approved": True, "warnings": ["Balancer unavailable"]}
+            screening = {"approved": True, "exposure_score": 0, "warnings": ["Balancer unavailable"]}
         
         self.log_stage(LifecycleStage.PORTFOLIO_SCREENING, setup.symbol, screening)
         return exposure_ok, screening
