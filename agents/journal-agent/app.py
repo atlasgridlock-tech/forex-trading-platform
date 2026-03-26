@@ -403,7 +403,14 @@ async def close_trade(request: TradeCloseRequest):
                 break
     
     if trade_id not in trades:
-        raise HTTPException(status_code=404, detail="Trade not found")
+        # Trade not found - this can happen for trades opened before Chronicle sync
+        # Log it but don't fail - the trade closed in MT5 regardless
+        print(f"[Chronicle] Trade {trade_id} not found for close - may be pre-sync trade")
+        return {
+            "trade_id": trade_id,
+            "status": "not_found",
+            "message": "Trade not in Chronicle - may have been opened before sync",
+        }
     
     trade = trades[trade_id]
     
