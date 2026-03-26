@@ -701,6 +701,7 @@ async def home():
         entry_price = t.get("entry_price", 0)
         stop_loss = t.get("stop_loss", 0)
         take_profit = t.get("take_profit", t.get("take_profit_1", 0))
+        take_profit_str = f"{take_profit:.5f}" if take_profit else "—"
         current_pnl = t.get("current_pnl", 0)
         strategy = t.get("strategy", "Unknown")
         trade_id = t.get("trade_id", "")
@@ -729,7 +730,7 @@ async def home():
                 </div>
                 <div class="detail-row">
                     <span class="label">SL / TP</span>
-                    <span class="value">{stop_loss:.5f} / {take_profit:.5f if take_profit else "—"}</span>
+                    <span class="value">{stop_loss:.5f} / {take_profit_str}</span>
                 </div>
                 <div class="detail-row">
                     <span class="label">Time</span>
