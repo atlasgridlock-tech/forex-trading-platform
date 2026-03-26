@@ -740,7 +740,7 @@ async def home():
                 <span class="status-badge" style="background: {outcome_color}20; color: {outcome_color};">
                     {outcome.upper().replace("_", " ")}
                 </span>
-                {"<button class='open-btn' onclick='event.stopPropagation(); openJournal(\"" + journal_path + "\")'>📂 Journal</button>" if journal_path else ""}
+                ''' + (f"<button class='open-btn' onclick='event.stopPropagation(); openJournal(\"{journal_path}\")'>📂 Journal</button>" if journal_path else "") + '''
             </div>
         </div>
         '''
@@ -1066,7 +1066,7 @@ async def home():
                 // Open in file explorer (works on macOS)
                 window.open("file://" + path, "_blank");
                 // Also show alert with path
-                alert("Journal folder: " + path + "\\n\\nIf it didn't open, copy the path above.");
+                alert("Journal folder: " + path + String.fromCharCode(10) + String.fromCharCode(10) + "If it didn't open, copy the path above.");
             }}
         }}
         
