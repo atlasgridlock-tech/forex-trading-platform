@@ -582,6 +582,22 @@ async def get_statistics(days: int = 30):
     return calculate_statistics(recent)
 
 
+@app.get("/api/trades/{trade_id}")
+async def get_trade_by_id(trade_id: str):
+    """Get a single trade by ID (alias for /api/trade/{trade_id})."""
+    # Check in-memory first
+    if trade_id in trades:
+        return trades[trade_id]
+    
+    # Check loaded trades
+    recent = load_trades(60)
+    for t in recent:
+        if t.get("trade_id") == trade_id:
+            return t
+    
+    raise HTTPException(status_code=404, detail="Trade not found")
+
+
 @app.get("/api/journal/{trade_id}")
 async def get_journal_entry(trade_id: str):
     """Get full journal entry for a trade."""
@@ -657,46 +673,107 @@ async def home():
     """Dashboard homepage."""
     recent = load_trades(30)
     stats = calculate_statistics(recent)
-    open_count = len(trades)
     
-    # Recent trades HTML
+    # Count open trades from in-memory trades dict
+    open_trades_list = [t for t in trades.values() if t.get("status") == "open"]
+    open_count = len(open_trades_list)
+    
+    # Combine recent trades from logs with current open trades
+    all_trades = list(trades.values()) + [t for t in recent if t.get("trade_id") not in trades]
+    
+    # Recent trades HTML with OPEN buttons that work
     trades_html = ""
-    for t in sorted(recent, key=lambda x: x.get("executed_at", ""), reverse=True)[:10]:
-        outcome = t.get("outcome", "open")
-        outcome_color = "#26a69a" if outcome == "win" else "#ef5350" if outcome == "loss" else "#f59e0b"
-        result_r = t.get("result_r", 0)
+    for t in sorted(all_trades, key=lambda x: x.get("executed_at", x.get("created_at", "")), reverse=True)[:15]:
+        outcome = t.get("outcome", t.get("status", "open"))
+        if outcome == "open":
+            outcome_color = "#f59e0b"
+        elif outcome == "win" or outcome == "closed_tp":
+            outcome_color = "#26a69a"
+        elif outcome == "loss" or outcome == "closed_sl":
+            outcome_color = "#ef5350"
+        else:
+            outcome_color = "#888"
+        
+        result_r = t.get("result_r", 0) or 0
+        direction = t.get("direction", "?")
+        direction_color = "#26a69a" if direction.lower() in ["long", "bullish"] else "#ef5350"
+        
+        entry_price = t.get("entry_price", 0)
+        stop_loss = t.get("stop_loss", 0)
+        take_profit = t.get("take_profit", t.get("take_profit_1", 0))
+        current_pnl = t.get("current_pnl", 0)
+        strategy = t.get("strategy", "Unknown")
+        trade_id = t.get("trade_id", "")
+        journal_path = t.get("journal_path", "")
+        executed_at = t.get("executed_at", t.get("created_at", ""))[:16] if t.get("executed_at") or t.get("created_at") else ""
         
         trades_html += f'''
-        <div class="trade-row">
-            <div>
-                <span style="color: #2196f3; font-weight: 600;">{t.get("symbol", "?")}</span>
-                <span style="color: {"#26a69a" if t.get("direction") == "long" else "#ef5350"}; margin-left: 8px;">
-                    {t.get("direction", "?").upper()}
+        <div class="trade-card" onclick="showTradeDetails('{trade_id}')">
+            <div class="trade-header">
+                <div class="trade-pair">
+                    <span class="symbol">{t.get("symbol", "?")}</span>
+                    <span class="direction" style="color: {direction_color};">{direction.upper()}</span>
+                </div>
+                <div class="trade-result" style="color: {outcome_color};">
+                    {result_r:+.2f}R
+                </div>
+            </div>
+            <div class="trade-details">
+                <div class="detail-row">
+                    <span class="label">Strategy</span>
+                    <span class="value">{strategy}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="label">Entry</span>
+                    <span class="value">{entry_price:.5f}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="label">SL / TP</span>
+                    <span class="value">{stop_loss:.5f} / {take_profit:.5f if take_profit else "—"}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="label">Time</span>
+                    <span class="value">{executed_at}</span>
+                </div>
+            </div>
+            <div class="trade-footer">
+                <span class="status-badge" style="background: {outcome_color}20; color: {outcome_color};">
+                    {outcome.upper().replace("_", " ")}
                 </span>
-            </div>
-            <div style="color: #888; font-size: 11px;">{t.get("strategy", "?")}</div>
-            <div style="color: {outcome_color}; font-weight: 600;">
-                {result_r:+.2f}R
-            </div>
-            <div class="status" style="background: {outcome_color}20; color: {outcome_color};">
-                {outcome.upper()}
+                {"<button class='open-btn' onclick='event.stopPropagation(); openJournal(\"" + journal_path + "\")'>📂 Journal</button>" if journal_path else ""}
             </div>
         </div>
         '''
     
     if not trades_html:
-        trades_html = '<div style="color: #666; text-align: center; padding: 20px;">No trades yet</div>'
+        trades_html = '<div class="empty-state">No trades recorded yet. Start trading to see your history here.</div>'
     
-    # Strategy performance
+    # Strategy performance with more detail
     strategy_html = ""
-    for strat, data in stats.get("by_strategy", {}).items():
-        wr_color = "#26a69a" if data["win_rate"] >= 50 else "#ef5350"
+    by_strategy = stats.get("by_strategy", {})
+    for strat, data in sorted(by_strategy.items(), key=lambda x: x[1].get("total_r", 0), reverse=True):
+        wr = data.get("win_rate", 0)
+        total_r = data.get("total_r", 0)
+        count = data.get("count", 0)
+        wr_color = "#26a69a" if wr >= 50 else "#ef5350"
+        r_color = "#26a69a" if total_r >= 0 else "#ef5350"
+        
         strategy_html += f'''
-        <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #333;">
-            <span>{strat}</span>
-            <span style="color: {wr_color}">{data["win_rate"]}% ({data["count"]} trades)</span>
+        <div class="strategy-row">
+            <div class="strategy-name">{strat}</div>
+            <div class="strategy-stats">
+                <span class="stat-item" style="color: {wr_color}">{wr:.0f}%</span>
+                <span class="stat-item" style="color: {r_color}">{total_r:+.1f}R</span>
+                <span class="stat-item trades">{count} trades</span>
+            </div>
         </div>
         '''
+    
+    # Recent lessons/patterns section
+    lessons_html = ""
+    patterns = stats.get("patterns", [])
+    for pattern in patterns[:5]:
+        lessons_html += f'''<div class="lesson-item">{pattern}</div>'''
     
     return f'''<!DOCTYPE html>
 <html><head>
@@ -704,34 +781,208 @@ async def home():
     <meta http-equiv="refresh" content="30">
     <style>
         * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-        body {{ font-family: -apple-system, sans-serif; background: #0a0a0f; color: #e0e0e0; padding: 20px; }}
-        .header {{ display: flex; align-items: center; gap: 15px; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #333; }}
-        .header h1 {{ color: #f59e0b; }}
-        .version {{ background: #f59e0b20; color: #f59e0b; padding: 4px 12px; border-radius: 12px; font-size: 12px; }}
-        .stats {{ display: grid; grid-template-columns: repeat(5, 1fr); gap: 15px; margin-bottom: 20px; }}
-        .stat {{ background: #1a1a24; border-radius: 10px; padding: 20px; text-align: center; }}
-        .stat-value {{ font-size: 28px; font-weight: bold; }}
+        body {{ 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
+            background: linear-gradient(135deg, #0a0a0f 0%, #12121a 100%); 
+            color: #e0e0e0; 
+            padding: 24px; 
+            min-height: 100vh;
+        }}
+        
+        .header {{ 
+            display: flex; 
+            align-items: center; 
+            gap: 15px; 
+            margin-bottom: 24px; 
+            padding-bottom: 20px; 
+            border-bottom: 1px solid rgba(255,255,255,0.1); 
+        }}
+        .header h1 {{ color: #f59e0b; font-size: 28px; letter-spacing: -0.5px; }}
+        .version {{ background: rgba(245,158,11,0.15); color: #f59e0b; padding: 4px 12px; border-radius: 12px; font-size: 11px; font-weight: 600; }}
+        .subtitle {{ color: #666; margin-left: auto; font-size: 13px; }}
+        
+        .stats {{ display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; margin-bottom: 24px; }}
+        .stat {{ 
+            background: rgba(26,26,36,0.8); 
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 12px; 
+            padding: 20px; 
+            text-align: center; 
+            transition: transform 0.2s, box-shadow 0.2s;
+        }}
+        .stat:hover {{ transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.3); }}
+        .stat-value {{ font-size: 32px; font-weight: 700; letter-spacing: -1px; }}
         .stat-value.green {{ color: #26a69a; }}
         .stat-value.red {{ color: #ef5350; }}
         .stat-value.yellow {{ color: #f59e0b; }}
-        .stat-label {{ font-size: 11px; color: #666; margin-top: 5px; text-transform: uppercase; }}
-        .grid {{ display: grid; grid-template-columns: 2fr 1fr; gap: 20px; }}
-        .card {{ background: #1a1a24; border-radius: 12px; padding: 20px; margin-bottom: 20px; }}
-        .card h2 {{ font-size: 13px; color: #888; margin-bottom: 15px; text-transform: uppercase; letter-spacing: 1px; }}
-        .trade-row {{ display: grid; grid-template-columns: 1fr 1fr 80px 80px; gap: 10px; align-items: center; padding: 12px; background: #0a0a0f; border-radius: 8px; margin: 8px 0; font-size: 13px; }}
-        .status {{ padding: 4px 10px; border-radius: 6px; font-size: 10px; text-align: center; font-weight: 600; }}
-        .chat-section {{ background: #1a1a24; border-radius: 12px; padding: 20px; }}
-        .chat-messages {{ height: 150px; overflow-y: auto; background: #0a0a0f; border-radius: 8px; padding: 10px; margin-bottom: 10px; }}
-        .chat-input {{ display: flex; gap: 10px; }}
-        .chat-input input {{ flex: 1; padding: 12px; border-radius: 8px; border: 1px solid #333; background: #0a0a0f; color: #fff; }}
-        .chat-input button {{ padding: 12px 24px; background: #f59e0b; color: #000; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; }}
+        .stat-label {{ font-size: 10px; color: #666; margin-top: 8px; text-transform: uppercase; letter-spacing: 1px; }}
+        
+        .main-grid {{ display: grid; grid-template-columns: 1.5fr 1fr; gap: 24px; }}
+        
+        .card {{ 
+            background: rgba(26,26,36,0.8); 
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 16px; 
+            padding: 24px; 
+            margin-bottom: 24px; 
+        }}
+        .card h2 {{ 
+            font-size: 12px; 
+            color: #888; 
+            margin-bottom: 20px; 
+            text-transform: uppercase; 
+            letter-spacing: 1.5px; 
+            font-weight: 600;
+        }}
+        
+        .trade-card {{ 
+            background: rgba(10,10,15,0.8); 
+            border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 12px; 
+            padding: 16px; 
+            margin-bottom: 12px; 
+            cursor: pointer;
+            transition: all 0.2s;
+        }}
+        .trade-card:hover {{ 
+            background: rgba(20,20,30,0.9); 
+            border-color: rgba(245,158,11,0.3);
+            transform: translateX(4px);
+        }}
+        
+        .trade-header {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }}
+        .trade-pair {{ display: flex; align-items: center; gap: 8px; }}
+        .symbol {{ font-size: 15px; font-weight: 700; color: #2196f3; }}
+        .direction {{ font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 4px; background: rgba(255,255,255,0.05); }}
+        .trade-result {{ font-size: 18px; font-weight: 700; }}
+        
+        .trade-details {{ display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; padding: 12px 0; border-top: 1px solid rgba(255,255,255,0.05); border-bottom: 1px solid rgba(255,255,255,0.05); }}
+        .detail-row {{ display: flex; justify-content: space-between; }}
+        .detail-row .label {{ color: #555; font-size: 11px; }}
+        .detail-row .value {{ color: #aaa; font-size: 11px; font-family: 'SF Mono', monospace; }}
+        
+        .trade-footer {{ display: flex; justify-content: space-between; align-items: center; margin-top: 12px; }}
+        .status-badge {{ padding: 4px 10px; border-radius: 6px; font-size: 10px; font-weight: 600; text-transform: uppercase; }}
+        .open-btn {{ 
+            background: rgba(245,158,11,0.15); 
+            color: #f59e0b; 
+            border: 1px solid rgba(245,158,11,0.3);
+            padding: 6px 12px; 
+            border-radius: 6px; 
+            font-size: 11px; 
+            cursor: pointer;
+            transition: all 0.2s;
+        }}
+        .open-btn:hover {{ background: rgba(245,158,11,0.25); }}
+        
+        .strategy-row {{ 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center;
+            padding: 12px 0; 
+            border-bottom: 1px solid rgba(255,255,255,0.05); 
+        }}
+        .strategy-row:last-child {{ border-bottom: none; }}
+        .strategy-name {{ font-size: 13px; font-weight: 500; }}
+        .strategy-stats {{ display: flex; gap: 16px; }}
+        .stat-item {{ font-size: 12px; font-weight: 600; }}
+        .stat-item.trades {{ color: #666; font-weight: 400; }}
+        
+        .empty-state {{ 
+            color: #555; 
+            text-align: center; 
+            padding: 40px 20px; 
+            font-size: 14px;
+        }}
+        
+        .lesson-item {{
+            padding: 10px 12px;
+            background: rgba(10,10,15,0.6);
+            border-radius: 8px;
+            margin-bottom: 8px;
+            font-size: 12px;
+            color: #aaa;
+            border-left: 3px solid #f59e0b;
+        }}
+        
+        .chat-section {{ 
+            background: rgba(26,26,36,0.8); 
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 16px; 
+            padding: 24px; 
+        }}
+        .chat-section h2 {{ color: #f59e0b; font-size: 16px; margin-bottom: 16px; }}
+        .chat-messages {{ 
+            height: 180px; 
+            overflow-y: auto; 
+            background: rgba(10,10,15,0.6); 
+            border-radius: 12px; 
+            padding: 16px; 
+            margin-bottom: 16px; 
+        }}
+        .chat-input {{ display: flex; gap: 12px; }}
+        .chat-input input {{ 
+            flex: 1; 
+            padding: 14px 16px; 
+            border-radius: 10px; 
+            border: 1px solid rgba(255,255,255,0.1); 
+            background: rgba(10,10,15,0.8); 
+            color: #fff; 
+            font-size: 13px;
+            transition: border-color 0.2s;
+        }}
+        .chat-input input:focus {{ outline: none; border-color: rgba(245,158,11,0.5); }}
+        .chat-input button {{ 
+            padding: 14px 28px; 
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); 
+            color: #000; 
+            border: none; 
+            border-radius: 10px; 
+            cursor: pointer; 
+            font-weight: 600;
+            font-size: 13px;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }}
+        .chat-input button:hover {{ transform: translateY(-1px); box-shadow: 0 4px 12px rgba(245,158,11,0.3); }}
+        
+        /* Modal for trade details */
+        .modal {{ 
+            display: none; 
+            position: fixed; 
+            top: 0; left: 0; right: 0; bottom: 0; 
+            background: rgba(0,0,0,0.8); 
+            z-index: 1000; 
+            padding: 40px;
+            overflow-y: auto;
+        }}
+        .modal.active {{ display: flex; justify-content: center; }}
+        .modal-content {{ 
+            background: #1a1a24; 
+            border-radius: 16px; 
+            padding: 32px; 
+            max-width: 600px; 
+            width: 100%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }}
+        .modal-close {{ 
+            float: right; 
+            background: none; 
+            border: none; 
+            color: #888; 
+            font-size: 24px; 
+            cursor: pointer; 
+        }}
     </style>
 </head>
 <body>
     <div class="header">
         <h1>Chronicle</h1>
         <span class="version">v2.0</span>
-        <span style="color: #888; margin-left: auto;">Trade Journal with Chart Generation</span>
+        <span class="subtitle">Trade Journal & Performance Analytics</span>
     </div>
     
     <div class="stats">
@@ -757,43 +1008,115 @@ async def home():
         </div>
     </div>
     
-    <div class="grid">
+    <div class="main-grid">
         <div class="card">
             <h2>Recent Trades</h2>
-            {trades_html}
+            <div style="max-height: 500px; overflow-y: auto;">
+                {trades_html}
+            </div>
         </div>
         
         <div>
             <div class="card">
                 <h2>Strategy Performance</h2>
-                {strategy_html if strategy_html else '<div style="color: #666;">No data yet</div>'}
+                {strategy_html if strategy_html else '<div class="empty-state">Trade more to see strategy analysis</div>'}
             </div>
             
             <div class="card">
-                <h2>Journal Folder</h2>
-                <div style="font-family: monospace; font-size: 11px; color: #888; word-break: break-all;">
+                <h2>Journal Location</h2>
+                <div style="font-family: 'SF Mono', monospace; font-size: 11px; color: #666; word-break: break-all; padding: 12px; background: rgba(10,10,15,0.6); border-radius: 8px;">
                     {JOURNAL_DIR}
                 </div>
+                <button onclick="copyPath()" style="margin-top: 12px; padding: 8px 16px; background: rgba(255,255,255,0.1); border: none; border-radius: 6px; color: #888; cursor: pointer; font-size: 11px;">
+                    📋 Copy Path
+                </button>
             </div>
         </div>
     </div>
     
     <div class="chat-section">
-        <h2 style="color: #f59e0b; margin-bottom: 15px;">Ask Chronicle</h2>
-        <div class="chat-messages" id="messages"></div>
+        <h2>Ask Chronicle</h2>
+        <div class="chat-messages" id="messages">
+            <div style="color: #555; font-size: 12px; text-align: center; padding: 20px;">
+                Ask me about your trading patterns, performance, or specific trades...
+            </div>
+        </div>
         <div class="chat-input">
-            <input type="text" id="input" placeholder="Ask about trades, patterns, lessons..." onkeypress="if(event.key==='Enter')sendMessage()">
+            <input type="text" id="input" placeholder="e.g., What's my best performing strategy?" onkeypress="if(event.key==='Enter')sendMessage()">
             <button onclick="sendMessage()">Send</button>
         </div>
     </div>
     
+    <!-- Trade Detail Modal -->
+    <div class="modal" id="tradeModal">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeModal()">&times;</button>
+            <div id="tradeDetails"></div>
+        </div>
+    </div>
+    
     <script>
+        function copyPath() {{
+            navigator.clipboard.writeText("{JOURNAL_DIR}");
+            alert("Journal path copied to clipboard!");
+        }}
+        
+        function openJournal(path) {{
+            if (path) {{
+                // Open in file explorer (works on macOS)
+                window.open("file://" + path, "_blank");
+                // Also show alert with path
+                alert("Journal folder: " + path + "\\n\\nIf it didn't open, copy the path above.");
+            }}
+        }}
+        
+        async function showTradeDetails(tradeId) {{
+            if (!tradeId) return;
+            try {{
+                const response = await fetch('/api/trades/' + tradeId);
+                if (response.ok) {{
+                    const trade = await response.json();
+                    document.getElementById('tradeDetails').innerHTML = `
+                        <h2 style="color: #f59e0b; margin-bottom: 20px;">${{trade.symbol}} ${{trade.direction?.toUpperCase()}}</h2>
+                        <div style="display: grid; gap: 12px;">
+                            <div><strong>Strategy:</strong> ${{trade.strategy}}</div>
+                            <div><strong>Entry:</strong> ${{trade.entry_price}}</div>
+                            <div><strong>Stop Loss:</strong> ${{trade.stop_loss}}</div>
+                            <div><strong>Take Profit:</strong> ${{trade.take_profit || "—"}}</div>
+                            <div><strong>Result:</strong> ${{trade.result_r?.toFixed(2) || "0.00"}}R</div>
+                            <div><strong>Status:</strong> ${{trade.status}}</div>
+                            <div><strong>Confluence:</strong> ${{trade.confluence_score || "—"}}/100</div>
+                            <hr style="border-color: #333;">
+                            <div><strong>Thesis:</strong></div>
+                            <div style="font-size: 12px; color: #888;">
+                                ${{trade.thesis?.why_here || "—"}}<br>
+                                ${{trade.thesis?.why_now || "—"}}<br>
+                                ${{trade.thesis?.invalidation || "—"}}
+                            </div>
+                        </div>
+                    `;
+                    document.getElementById('tradeModal').classList.add('active');
+                }}
+            }} catch (e) {{
+                console.error(e);
+            }}
+        }}
+        
+        function closeModal() {{
+            document.getElementById('tradeModal').classList.remove('active');
+        }}
+        
+        // Close modal on outside click
+        document.getElementById('tradeModal').addEventListener('click', function(e) {{
+            if (e.target === this) closeModal();
+        }});
+        
         async function sendMessage() {{
             const input = document.getElementById('input');
             const messages = document.getElementById('messages');
             const text = input.value.trim();
             if (!text) return;
-            messages.innerHTML += `<div style="margin:5px 0;padding:8px 12px;background:#1a1a24;border-radius:8px;font-size:12px">${{text}}</div>`;
+            messages.innerHTML += `<div style="margin:8px 0;padding:12px;background:rgba(255,255,255,0.05);border-radius:10px;font-size:13px">${{text}}</div>`;
             input.value = '';
             messages.scrollTop = messages.scrollHeight;
             
@@ -804,9 +1127,9 @@ async def home():
                     body: JSON.stringify({{message: text}})
                 }});
                 const data = await response.json();
-                messages.innerHTML += `<div style="margin:5px 0;padding:8px 12px;background:rgba(249,158,11,0.15);border-left:3px solid #f59e0b;border-radius:8px;font-size:12px">${{data.response.replace(/\\n/g, '<br>')}}</div>`;
+                messages.innerHTML += `<div style="margin:8px 0;padding:12px;background:rgba(245,158,11,0.1);border-left:3px solid #f59e0b;border-radius:10px;font-size:13px">${{data.response.replace(/\\n/g, '<br>')}}</div>`;
             }} catch (e) {{
-                messages.innerHTML += `<div style="color:#ef5350;font-size:12px">Error: ${{e.message}}</div>`;
+                messages.innerHTML += `<div style="color:#ef5350;font-size:12px;padding:12px">Error: ${{e.message}}</div>`;
             }}
             messages.scrollTop = messages.scrollHeight;
         }}
