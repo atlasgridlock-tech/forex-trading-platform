@@ -283,8 +283,11 @@ class LifecycleManager:
                     volume = pos.get("volume", 0.01)
                     profit = pos.get("profit", 0)
                     
+                    # JPY pairs have 2 decimal places, others have 4
+                    pip_multiplier = 100 if "JPY" in symbol else 10000
+                    
                     # Calculate risk in pips for R calculation
-                    risk_pips = abs(entry - sl) * 10000 if sl else 1
+                    risk_pips = abs(entry - sl) * pip_multiplier if sl else 1
                     
                     # Create a minimal setup
                     setup = TradeSetup(
@@ -1091,19 +1094,23 @@ class LifecycleManager:
         price_data = await self.fetch_agent("curator", f"/api/snapshot/symbol/{trade.setup.symbol}")
         
         if price_data:
-            current_price = price_data.get("bid", 0) if trade.setup.direction == "long" else price_data.get("ask", 0)
+            is_long = trade.setup.direction.lower() in ["long", "buy", "bullish"]
+            current_price = price_data.get("bid", 0) if is_long else price_data.get("ask", 0)
             trade.current_price = current_price
             
+            # JPY pairs have 2 decimal places, others have 4
+            pip_multiplier = 100 if "JPY" in trade.setup.symbol else 10000
+            
             # Calculate P&L
-            if trade.setup.direction == "long":
-                pnl_pips = (current_price - trade.entry_price_actual) * (10000 if "JPY" not in trade.setup.symbol else 100)
+            if is_long:
+                pnl_pips = (current_price - trade.entry_price_actual) * pip_multiplier
             else:
-                pnl_pips = (trade.entry_price_actual - current_price) * (10000 if "JPY" not in trade.setup.symbol else 100)
+                pnl_pips = (trade.entry_price_actual - current_price) * pip_multiplier
             
             trade.current_pnl_pips = pnl_pips
             
             # Calculate R
-            risk_pips = abs(trade.entry_price_actual - trade.setup.stop_loss) * (10000 if "JPY" not in trade.setup.symbol else 100)
+            risk_pips = abs(trade.entry_price_actual - trade.setup.stop_loss) * pip_multiplier
             trade.current_pnl_r = pnl_pips / risk_pips if risk_pips > 0 else 0
             
             # Track excursions
@@ -1528,21 +1535,36 @@ class LifecycleManager:
                     # Get latest prices from Curator
                     prices = await self.fetch_agent("curator", "/api/market")
                     
+                    if not prices:
+                        print(f"⚠️ No price data from Curator - cannot update trade P&L")
+                    
                     for trade_id, trade in list(self.active_trades.items()):
-                        symbol = trade.setup.symbol.replace(".s", "").replace(".S", "")
+                        symbol = trade.setup.symbol.replace(".s", "").replace(".S", "").replace(".ecn", "").replace(".ECN", "")
                         
                         # Update current price
                         if prices and symbol in prices:
                             trade.current_price = prices[symbol].get("price", trade.current_price)
                             
-                            # Calculate current P/L in R
-                            if trade.setup.direction.lower() in ["long", "buy"]:
-                                pnl_pips = (trade.current_price - trade.setup.entry_price) * 10000
-                            else:
-                                pnl_pips = (trade.setup.entry_price - trade.current_price) * 10000
+                            # JPY pairs have 2 decimal places, others have 4
+                            pip_multiplier = 100 if "JPY" in symbol else 10000
                             
-                            risk_pips = abs(trade.setup.entry_price - trade.setup.stop_loss) * 10000
+                            # Calculate current P/L in R
+                            if trade.setup.direction.lower() in ["long", "buy", "bullish"]:
+                                pnl_pips = (trade.current_price - trade.setup.entry_price) * pip_multiplier
+                            else:
+                                pnl_pips = (trade.setup.entry_price - trade.current_price) * pip_multiplier
+                            
+                            risk_pips = abs(trade.setup.entry_price - trade.setup.stop_loss) * pip_multiplier
                             trade.current_pnl_r = pnl_pips / risk_pips if risk_pips > 0 else 0
+                            trade.current_pnl_pips = pnl_pips
+                            
+                            # Log when at significant R levels
+                            if trade.current_pnl_r >= 1.0 and not trade.tp1_hit:
+                                print(f"   [{symbol}] 📈 {trade.current_pnl_r:.2f}R | Entry: {trade.setup.entry_price:.5f}, SL: {trade.setup.stop_loss:.5f}, Current: {trade.current_price:.5f}")
+                                print(f"   [{symbol}] TP1 threshold: {trade.setup.exit_framework.tp1_r}R | Direction: {trade.setup.direction}")
+                        else:
+                            if prices:
+                                print(f"⚠️ No price data for {symbol} (have: {list(prices.keys())})")
                         
                         # Run exit management (checks TP1, TP2, SL)
                         await self.stage_exit_management(trade)
